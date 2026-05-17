@@ -1,3 +1,5 @@
+import redis from "../../config/redis.js";
+
 const PRESENCE_TTL = 35; // seconds — client pings every 30s
 
 export const registerPresenceHandlers = (io, socket) => {

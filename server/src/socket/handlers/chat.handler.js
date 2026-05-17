@@ -1,4 +1,4 @@
-import Message from "../models/Message.js";
+import Message from "../../models/Message.js";
 
 export const registerChatHandlers = (io, socket) => {
 	socket.on("chat:send", async ({ workspaceId, content }) => {

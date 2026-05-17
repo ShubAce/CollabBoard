@@ -3,6 +3,7 @@ import Board from "../models/Board.js";
 import Comment from "../models/Comment.js";
 import Task from "../models/Task.js";
 import User from "../models/User.js";
+import redis from "../config/redis.js";
 
 const createTaskSchema = z.object({
 	title: z.string().trim().min(1, "Title is required"),
@@ -53,6 +54,21 @@ const ensureTask = async (workspaceId, boardId, taskId) => {
 	return Task.findOne({ _id: taskId, board: boardId, workspace: workspaceId });
 };
 
+const emitToBoard = (req, boardId, event, payload) => {
+	const io = req.app.get("io");
+	if (io) {
+		io.to(`board:${boardId}`).emit(event, payload);
+	}
+};
+
+const invalidateBoardCache = async (boardId) => {
+	try {
+		await redis.del(`board:${boardId}:tasks`);
+	} catch (err) {
+		console.warn("Failed to invalidate board cache:", err.message);
+	}
+};
+
 export const createTask = async (req, res, next) => {
 	try {
 		const parsed = createTaskSchema.safeParse(req.body);
@@ -93,6 +109,8 @@ export const createTask = async (req, res, next) => {
 		});
 
 		const populated = await task.populate("assignees", "name avatar email");
+		await invalidateBoardCache(task.board);
+		emitToBoard(req, task.board, "task:created", { task: populated });
 		return res.status(201).json(populated);
 	} catch (err) {
 		return next(err);
@@ -142,6 +160,8 @@ export const updateTask = async (req, res, next) => {
 		}
 
 		await task.populate("assignees", "name avatar email");
+		await invalidateBoardCache(task.board);
+		emitToBoard(req, task.board, "task:updated", { taskId: task._id, changes: parsed.data });
 		return res.status(200).json(task);
 	} catch (err) {
 		return next(err);
@@ -159,6 +179,8 @@ export const deleteTask = async (req, res, next) => {
 		await Comment.deleteMany({ task: task._id });
 		await Task.updateMany({ board: task.board, columnId: task.columnId, order: { $gt: task.order } }, { $inc: { order: -1 } });
 
+		await invalidateBoardCache(task.board);
+		emitToBoard(req, task.board, "task:deleted", { taskId: task._id });
 		return res.status(200).json({ message: "Task deleted" });
 	} catch (err) {
 		return next(err);
@@ -176,6 +198,7 @@ export const moveTask = async (req, res, next) => {
 		if (!task) {
 			return res.status(404).json({ message: "Task not found" });
 		}
+		const fromColumnId = task.columnId.toString();
 
 		const board = await ensureBoard(req.params.workspaceId, req.params.boardId);
 		if (!board) {
@@ -193,7 +216,12 @@ export const moveTask = async (req, res, next) => {
 
 		if (sameColumn) {
 			if (newOrder === task.order) {
-				return res.status(200).json({ taskId: task._id, newOrder: task.order });
+				return res.status(200).json({
+					taskId: task._id,
+					fromColumnId,
+					toColumnId: targetColumnId,
+					newOrder: task.order,
+				});
 			}
 
 			if (newOrder > task.order) {
@@ -210,21 +238,39 @@ export const moveTask = async (req, res, next) => {
 
 			task.order = newOrder;
 			await task.save();
+			await invalidateBoardCache(task.board);
+			emitToBoard(req, task.board, "task:moved", {
+				taskId: task._id,
+				fromColumnId,
+				toColumnId: targetColumnId,
+				newOrder: task.order,
+			});
 
-			return res.status(200).json({ taskId: task._id, newOrder: task.order });
+			return res.status(200).json({
+				taskId: task._id,
+				fromColumnId,
+				toColumnId: targetColumnId,
+				newOrder: task.order,
+			});
 		}
 
-		const fromColumnId = task.columnId;
-		await Task.updateMany({ board: task.board, columnId: fromColumnId, order: { $gt: task.order } }, { $inc: { order: -1 } });
+		await Task.updateMany({ board: task.board, columnId: task.columnId, order: { $gt: task.order } }, { $inc: { order: -1 } });
 		await Task.updateMany({ board: task.board, columnId: targetColumnId, order: { $gte: newOrder } }, { $inc: { order: 1 } });
 
 		task.columnId = targetColumnId;
 		task.order = newOrder;
 		await task.save();
+		await invalidateBoardCache(task.board);
+		emitToBoard(req, task.board, "task:moved", {
+			taskId: task._id,
+			fromColumnId,
+			toColumnId: targetColumnId,
+			newOrder: task.order,
+		});
 
 		return res.status(200).json({
 			taskId: task._id,
-			fromColumnId: fromColumnId.toString(),
+			fromColumnId,
 			toColumnId: targetColumnId,
 			newOrder: task.order,
 		});

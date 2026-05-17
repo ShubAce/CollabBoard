@@ -3,6 +3,13 @@ import { createAdapter } from "@socket.io/redis-adapter";
 import { createClient } from "redis";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
+import {
+	registerBoardHandlers,
+	registerChatHandlers,
+	registerPresenceHandlers,
+	registerWhiteboardHandlers,
+	handleDisconnect,
+} from "../socket/index.js";
 
 export const initSocket = async (httpServer) => {
 	const io = new Server(httpServer, {

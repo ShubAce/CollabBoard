@@ -1,5 +1,10 @@
+import "dotenv/config";
+import mongoose from "mongoose";
 import activityQueue from "../activityQueue.js";
 import ActivityLog from "../../models/ActivityLog.js";
+
+// Workers run as standalone processes — need their own DB connection
+await mongoose.connect(process.env.MONGO_URI);
 
 activityQueue.process(async (job) => {
 	const { name, data } = job;
@@ -20,3 +25,9 @@ activityQueue.process(async (job) => {
 		meta: data,
 	});
 });
+
+activityQueue.on("failed", (job, err) => {
+	console.error(`Activity job failed [${job.name}]:`, err.message);
+});
+
+console.log("Activity worker running...");

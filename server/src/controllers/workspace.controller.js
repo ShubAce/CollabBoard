@@ -8,6 +8,9 @@ import Task from "../models/Task.js";
 import User from "../models/User.js";
 import WhiteboardSnapshot from "../models/WhiteboardSnapshot.js";
 import Workspace from "../models/Workspace.js";
+import emailQueue from "../queues/emailQueue.js";
+import activityQueue from "../queues/activityQueue.js";
+
 
 const createWorkspaceSchema = z.object({
 	name: z.string().trim().min(1, "Name is required"),
@@ -183,6 +186,24 @@ export const inviteMember = async (req, res, next) => {
 		workspace.members.push({ user: user._id, role, joinedAt: new Date() });
 		await workspace.save();
 
+		// Queue invite email + activity log asynchronously
+		try {
+			await emailQueue.add("send_workspace_invite", {
+				to: user.email,
+				userName: user.name,
+				workspaceName: workspace.name,
+				inviterName: req.user.name,
+			});
+			await activityQueue.add("log_member_invited", {
+				workspaceId: workspace._id,
+				actorId: req.user._id,
+				taskId: null,
+				meta: { invitedUserId: user._id, role },
+			});
+		} catch (queueErr) {
+			console.error("Queue error in inviteMember:", queueErr.message);
+		}
+
 		return res.status(200).json({ message: "Invitation sent." });
 	} catch (err) {
 		return next(err);
@@ -264,6 +285,29 @@ export const listActivity = async (req, res, next) => {
 			page,
 			totalPages: Math.ceil(total / limit),
 			totalItems: total,
+		});
+	} catch (err) {
+		return next(err);
+	}
+};
+
+export const getMessages = async (req, res, next) => {
+	try {
+		const limit = Math.min(Math.max(parseInt(req.query.limit || "50", 10), 1), 100);
+		const before = req.query.before || null;
+
+		const filter = { workspace: req.params.workspaceId };
+		if (before) filter._id = { $lt: before };
+
+		const messages = await Message.find(filter)
+			.sort({ _id: -1 })
+			.limit(limit)
+			.populate("sender", "name avatar");
+
+		return res.status(200).json({
+			messages: messages.reverse(),
+			hasMore: messages.length === limit,
+			nextCursor: messages[0]?._id || null,
 		});
 	} catch (err) {
 		return next(err);

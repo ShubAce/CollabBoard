@@ -6,10 +6,12 @@ import AppShell from "./pages/AppShell.jsx";
 import AuthCallbackPage from "./pages/AuthCallbackPage.jsx";
 import BoardList from "./pages/BoardList.jsx";
 import BoardPage from "./pages/BoardPage.jsx";
+import ChatPage from "./pages/ChatPage.jsx";
 import CreateWorkspace from "./pages/CreateWorkspace.jsx";
 import LandingPage from "./pages/LandingPage.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
 import NotFoundPage from "./pages/NotFoundPage.jsx";
+import NotificationsPage from "./pages/NotificationsPage.jsx";
 import RegisterPage from "./pages/RegisterPage.jsx";
 import WorkspaceDashboard from "./pages/WorkspaceDashboard.jsx";
 import WorkspaceList from "./pages/WorkspaceList.jsx";
@@ -117,6 +119,14 @@ function App() {
 						<Route
 							path="workspaces/:workspaceId/boards/:boardId"
 							element={<BoardPage />}
+						/>
+						<Route
+							path="workspaces/:workspaceId/chat"
+							element={<ChatPage />}
+						/>
+						<Route
+							path="notifications"
+							element={<NotificationsPage />}
 						/>
 					</Route>
 				</Route>

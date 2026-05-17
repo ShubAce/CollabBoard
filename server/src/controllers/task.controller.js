@@ -1,9 +1,17 @@
 import { z } from "zod";
 import Board from "../models/Board.js";
 import Comment from "../models/Comment.js";
+import Notification from "../models/Notification.js";
 import Task from "../models/Task.js";
 import User from "../models/User.js";
 import redis from "../config/redis.js";
+import emailQueue from "../queues/emailQueue.js";
+import activityQueue from "../queues/activityQueue.js";
+
+const emitNotification = (req, userId, notification) => {
+	const io = req.app.get("io");
+	if (io) io.to(`user:${userId}`).emit("notification:new", { notification });
+};
 
 const createTaskSchema = z.object({
 	title: z.string().trim().min(1, "Title is required"),
@@ -111,6 +119,37 @@ export const createTask = async (req, res, next) => {
 		const populated = await task.populate("assignees", "name avatar email");
 		await invalidateBoardCache(task.board);
 		emitToBoard(req, task.board, "task:created", { task: populated });
+
+		// Async: activity log + notifications for assignees
+		try {
+			await activityQueue.add("log_task_created", {
+				workspaceId: task.workspace,
+				actorId: req.user._id,
+				taskId: task._id,
+				taskTitle: task.title,
+			});
+
+			for (const assignee of populated.assignees) {
+				const notification = await Notification.create({
+					recipient: assignee._id,
+					type: "task_assigned",
+					payload: { taskId: task._id, taskTitle: task.title, boardId: task.board, workspaceId: task.workspace },
+					isRead: false,
+				});
+				emitNotification(req, assignee._id, notification);
+				await emailQueue.add("send_task_assigned", {
+					to: assignee.email,
+					userName: assignee.name,
+					taskTitle: task.title,
+					boardName: (await Board.findById(task.board).select("name"))?.name || "",
+					workspaceName: "",
+					taskUrl: `${process.env.CLIENT_URL}/app/workspaces/${task.workspace}/boards/${task.board}`,
+				});
+			}
+		} catch (queueErr) {
+			console.error("Queue error in createTask:", queueErr.message);
+		}
+
 		return res.status(201).json(populated);
 	} catch (err) {
 		return next(err);
@@ -181,6 +220,18 @@ export const deleteTask = async (req, res, next) => {
 
 		await invalidateBoardCache(task.board);
 		emitToBoard(req, task.board, "task:deleted", { taskId: task._id });
+
+		try {
+			await activityQueue.add("log_task_deleted", {
+				workspaceId: task.workspace,
+				actorId: req.user._id,
+				taskId: task._id,
+				taskTitle: task.title,
+			});
+		} catch (queueErr) {
+			console.error("Queue error in deleteTask:", queueErr.message);
+		}
+
 		return res.status(200).json({ message: "Task deleted" });
 	} catch (err) {
 		return next(err);
@@ -268,6 +319,19 @@ export const moveTask = async (req, res, next) => {
 			newOrder: task.order,
 		});
 
+		try {
+			await activityQueue.add("log_task_moved", {
+				workspaceId: task.workspace,
+				actorId: req.user._id,
+				taskId: task._id,
+				taskTitle: task.title,
+				fromColumnId,
+				toColumnId: targetColumnId,
+			});
+		} catch (queueErr) {
+			console.error("Queue error in moveTask:", queueErr.message);
+		}
+
 		return res.status(200).json({
 			taskId: task._id,
 			fromColumnId,
@@ -344,6 +408,41 @@ export const addComment = async (req, res, next) => {
 		await task.save();
 
 		await comment.populate("author", "name avatar email");
+
+		// Emit real-time event to board
+		emitToBoard(req, task.board, "task:comment_added", { taskId: task._id, comment });
+
+		// Async: activity log + mention notifications
+		try {
+			await activityQueue.add("log_comment_added", {
+				workspaceId: task.workspace,
+				actorId: req.user._id,
+				taskId: task._id,
+				taskTitle: task.title,
+			});
+
+			const mentions = parsed.data.mentions || [];
+			for (const mentionedUserId of mentions) {
+				const mentionedUser = await User.findById(mentionedUserId).select("name email");
+				if (!mentionedUser) continue;
+				const notification = await Notification.create({
+					recipient: mentionedUser._id,
+					type: "comment_mention",
+					payload: { taskId: task._id, taskTitle: task.title, boardId: task.board, workspaceId: task.workspace },
+					isRead: false,
+				});
+				emitNotification(req, mentionedUser._id, notification);
+				await emailQueue.add("send_comment_mention", {
+					to: mentionedUser.email,
+					userName: mentionedUser.name,
+					authorName: req.user.name,
+					taskTitle: task.title,
+				});
+			}
+		} catch (queueErr) {
+			console.error("Queue error in addComment:", queueErr.message);
+		}
+
 		return res.status(201).json(comment);
 	} catch (err) {
 		return next(err);

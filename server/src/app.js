@@ -6,6 +6,7 @@ import morgan from "morgan";
 import passport from "passport";
 import authRoutes from "./routes/auth.routes.js";
 import boardRoutes from "./routes/board.routes.js";
+import notificationRoutes from "./routes/notification.routes.js";
 import taskRoutes from "./routes/task.routes.js";
 import userRoutes from "./routes/user.routes.js";
 import workspaceRoutes from "./routes/workspace.routes.js";
@@ -27,5 +28,7 @@ app.use("/api/v1/users", authenticateToken, userRoutes);
 app.use("/api/v1/workspaces", authenticateToken, workspaceRoutes);
 app.use("/api/v1/workspaces/:workspaceId/boards", authenticateToken, checkWorkspaceMember, boardRoutes);
 app.use("/api/v1/workspaces/:workspaceId/boards/:boardId/tasks", authenticateToken, checkWorkspaceMember, taskRoutes);
+app.use("/api/v1/notifications", authenticateToken, notificationRoutes);
 
 export default app;
+

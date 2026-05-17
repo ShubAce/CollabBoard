@@ -3,6 +3,7 @@ import {
 	changeMemberRole,
 	createWorkspace,
 	deleteWorkspace,
+	getMessages,
 	getWorkspace,
 	inviteMember,
 	listActivity,
@@ -26,5 +27,7 @@ router.post("/:workspaceId/invite", checkRole("admin"), inviteMember);
 router.patch("/:workspaceId/members/:userId", checkRole("admin"), changeMemberRole);
 router.delete("/:workspaceId/members/:userId", checkRole("admin"), removeMember);
 router.get("/:workspaceId/activity", listActivity);
+router.get("/:workspaceId/messages", getMessages);
 
 export default router;
+

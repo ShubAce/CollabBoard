@@ -18,15 +18,15 @@ export default function AppShell() {
 
 	return (
 		<div className="mx-auto w-full max-w-6xl px-6 py-8">
-			<header className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-amber-100 bg-white/90 p-6 shadow-sm">
+			<header className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-ghost-white-200 bg-white/80 p-6 shadow-sm">
 				<div>
-					<h1 className="text-2xl font-semibold tracking-tight text-slate-900 font-['Fraunces']">CollabBoard</h1>
-					<p className="text-sm text-slate-500">{user ? `Signed in as ${user.name}` : "Signed in"}</p>
+					<h1 className="text-2xl font-semibold tracking-tight text-jet-black-900 font-display">CollabBoard</h1>
+					<p className="text-sm text-jet-black-500">{user ? `Signed in as ${user.name}` : "Signed in"}</p>
 				</div>
 				<nav className="flex gap-2 text-sm font-medium">
 					<Link
 						to="/app/workspaces"
-						className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-slate-700 transition hover:bg-amber-100"
+						className="rounded-xl border border-ghost-white-200 bg-ghost-white-100 px-3 py-2 text-jet-black-700 transition hover:bg-ghost-white-200"
 					>
 						Workspaces
 					</Link>
@@ -34,7 +34,7 @@ export default function AppShell() {
 				<button
 					type="button"
 					onClick={handleLogout}
-					className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+					className="rounded-xl border border-ghost-white-200 bg-white px-4 py-2 text-sm font-semibold text-jet-black-700 transition hover:bg-ghost-white-100"
 				>
 					Log out
 				</button>

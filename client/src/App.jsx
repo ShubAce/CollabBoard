@@ -66,7 +66,7 @@ function App() {
 	}, [accessToken, clearAuth, setAuth, setHydrating, user]);
 
 	return (
-		<div className="min-h-screen bg-gradient-to-b from-white via-amber-50 to-amber-100 text-slate-900 font-['Space_Grotesk']">
+		<div className="min-h-screen bg-gradient-to-b from-ghost-white-50 via-ghost-white-100 to-space-indigo-50 text-jet-black-900 font-sans">
 			<Routes>
 				<Route
 					path="/"

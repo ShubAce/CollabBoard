@@ -18,7 +18,7 @@ export default function AuthCallbackPage() {
 	}, [navigate, setAuth, token]);
 
 	return (
-		<div className="mx-auto mt-16 w-full max-w-md rounded-2xl border border-amber-100 bg-white/90 p-6 text-center text-sm text-slate-600 shadow-lg">
+		<div className="mx-auto mt-16 w-full max-w-md rounded-2xl border border-ghost-white-200 bg-white/90 p-6 text-center text-sm text-jet-black-600 shadow-lg">
 			Signing you in...
 		</div>
 	);

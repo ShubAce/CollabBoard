@@ -161,6 +161,7 @@
     white-space: nowrap;
   }
   .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn svg { flex-shrink: 0; }
 
   .btn-primary {
     background: var(--accent);
@@ -199,6 +200,97 @@
 
   .btn-sm { padding: 4px 10px; font-size: 12px; }
   .btn-lg { padding: 12px 24px; font-size: 16px; }
+
+  .icon-box {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-2);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    flex-shrink: 0;
+  }
+
+  .icon-box-accent {
+    background: var(--accent-muted);
+    border-color: rgba(108,99,255,0.35);
+    color: var(--accent);
+  }
+
+  .page-panel {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+  }
+
+  .page-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+  }
+
+  .page-subtitle {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin: 4px 0 0;
+  }
+
+  .tab-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .tab-button:hover {
+    background: var(--bg-surface-2);
+    color: var(--text-primary);
+  }
+  .tab-button.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 56px 24px;
+    color: var(--text-secondary);
+  }
+
+  .empty-state-icon {
+    width: 48px;
+    height: 48px;
+    margin: 0 auto 14px;
+  }
+
+  .message-success {
+    background: var(--success-muted);
+    border: 1px solid rgba(52,211,153,0.3);
+    border-radius: var(--radius-md);
+    color: var(--success);
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+
+  .message-error {
+    background: var(--danger-muted);
+    border: 1px solid rgba(248,113,113,0.3);
+    border-radius: var(--radius-md);
+    color: var(--danger);
+    padding: 8px 12px;
+    font-size: 13px;
+  }
 
   /* Badge / Chip */
   .badge {

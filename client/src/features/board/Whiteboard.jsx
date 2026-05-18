@@ -1,5 +1,7 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useRef, useState } from "react";
 import api from "../../api/axios";
+import Icon from "../../components/ui/Icon.jsx";
 import { getSocket } from "../../socket";
 import useAuthStore from "../../store/authStore";
 
@@ -297,43 +299,37 @@ export default function Whiteboard({ workspaceId, boardId }) {
 	const cursorEntries = Object.values(remoteCursors);
 
 	return (
-		<section className="rounded-2xl border border-ghost-white-200 bg-white/90 p-4 shadow-sm">
-			<div className="flex flex-wrap items-center justify-between gap-3">
+		<section className="page-panel" style={{ padding: 16 }}>
+			<div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
 				<div>
-					<h3 className="text-base font-semibold text-jet-black-900">Shared Whiteboard</h3>
-					<p className="text-xs text-jet-black-500">Draw, sketch, and move together in real time.</p>
+					<h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>Shared Whiteboard</h3>
+					<p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "4px 0 0" }}>Draw, sketch, and move together in real time.</p>
 				</div>
-				<div className="flex items-center gap-2">
-					<button
-						onClick={handleClear}
-						className="rounded-lg border border-ghost-white-200 px-3 py-1.5 text-xs font-semibold text-jet-black-700 transition hover:bg-ghost-white-100"
-						type="button"
-					>
-						Clear
-					</button>
-					<button
-						onClick={handleSave}
-						disabled={isSaving}
-						className="rounded-lg bg-space-indigo-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-space-indigo-600 disabled:opacity-60"
-						type="button"
-					>
-						{isSaving ? "Saving..." : "Save snapshot"}
+				<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+					<button onClick={handleClear} className="btn btn-ghost btn-sm" type="button">Clear</button>
+					<button onClick={handleSave} disabled={isSaving} className="btn btn-primary btn-sm" type="button">
+						{isSaving ? <><span className="spinner" style={{ width: 12, height: 12 }} /> Saving...</> : "Save snapshot"}
 					</button>
 				</div>
 			</div>
 
-			<div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ghost-white-200 bg-ghost-white-100/60 p-3">
-				<div className="flex flex-wrap items-center gap-4">
-					<div className="flex items-center gap-2">
-						<span className="text-xs font-semibold text-jet-black-600">Color</span>
-						<div className="flex items-center gap-1">
+			<div style={{ marginTop: 16, display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 14, background: "var(--bg-surface-2)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: 12 }}>
+				<div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 20 }}>
+					<div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+						<span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>Color</span>
+						<div style={{ display: "flex", alignItems: "center", gap: 6 }}>
 							{COLOR_OPTIONS.map((option) => (
 								<button
 									key={option.value}
-									className={`h-6 w-6 rounded-full border-2 transition ${
-										strokeColor === option.value ? "border-jet-black-900" : "border-white"
-									}`}
-									style={{ backgroundColor: option.value }}
+									style={{
+										width: 24,
+										height: 24,
+										borderRadius: "50%",
+										backgroundColor: option.value,
+										border: strokeColor === option.value ? "2px solid #fff" : "2px solid var(--border)",
+										outline: strokeColor === option.value ? `2px solid ${option.value}` : "none",
+										cursor: "pointer",
+									}}
 									onClick={() => setStrokeColor(option.value)}
 									type="button"
 									title={option.label}
@@ -342,41 +338,36 @@ export default function Whiteboard({ workspaceId, boardId }) {
 							))}
 						</div>
 					</div>
-					<div className="flex items-center gap-2">
-						<span className="text-xs font-semibold text-jet-black-600">Brush</span>
-						<div className="flex items-center gap-1">
+					<div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+						<span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>Brush</span>
+						<div style={{ display: "flex", alignItems: "center", gap: 6 }}>
 							{BRUSH_SIZES.map((size) => (
-								<button
-									key={size}
-									className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition ${
-										strokeWidth === size
-											? "border-space-indigo-500 bg-space-indigo-500 text-white"
-											: "border-ghost-white-200 bg-white text-jet-black-700 hover:bg-ghost-white-100"
-									}`}
-									onClick={() => setStrokeWidth(size)}
-									type="button"
-								>
+								<button key={size} onClick={() => setStrokeWidth(size)} type="button" className={`tab-button${strokeWidth === size ? " active" : ""}`} style={{ padding: "4px 9px", fontSize: 11 }}>
 									{size}px
 								</button>
 							))}
 						</div>
 					</div>
 				</div>
-				<div className="flex items-center gap-2 text-xs text-jet-black-500">
-					<span
-						className="inline-flex h-2 w-2 rounded-full"
-						style={{ backgroundColor: strokeColor }}
-					/>
+				<div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-muted)" }}>
+					<Icon name="edit" size={14} style={{ color: strokeColor }} />
 					<span>Brush {strokeWidth}px</span>
 				</div>
 			</div>
-			{saveError ? <p className="mt-2 text-xs text-red-600">{saveError}</p> : null}
+			{saveError ? <p className="message-error" style={{ marginTop: 10 }}>{saveError}</p> : null}
 
 			<div
-				className="relative mt-4 h-[520px] w-full overflow-hidden rounded-xl border border-ghost-white-200 bg-white"
 				style={{
+					position: "relative",
+					marginTop: 16,
+					height: 520,
+					width: "100%",
+					overflow: "hidden",
+					borderRadius: "var(--radius-lg)",
+					border: "1px solid var(--border)",
+					backgroundColor: "#F8FAFC",
 					backgroundImage:
-						"linear-gradient(rgba(15, 23, 42, 0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(15, 23, 42, 0.06) 1px, transparent 1px)",
+						"linear-gradient(rgba(15, 23, 42, 0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(15, 23, 42, 0.07) 1px, transparent 1px)",
 					backgroundSize: "24px 24px",
 				}}
 			>
@@ -384,7 +375,7 @@ export default function Whiteboard({ workspaceId, boardId }) {
 					ref={canvasRef}
 					width={1200}
 					height={700}
-					className="h-full w-full touch-none"
+					style={{ width: "100%", height: "100%", touchAction: "none" }}
 				/>
 				{canvasRect &&
 					cursorEntries.map((cursor) => {
@@ -395,11 +386,10 @@ export default function Whiteboard({ workspaceId, boardId }) {
 						return (
 							<div
 								key={cursor.userId}
-								className="pointer-events-none absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-1"
-								style={{ left, top }}
+								style={{ pointerEvents: "none", position: "absolute", display: "flex", alignItems: "center", gap: 4, transform: "translate(-50%, -50%)", left, top }}
 							>
-								<span className="h-2 w-2 rounded-full bg-space-indigo-500" />
-								<span className="rounded bg-jet-black-900/80 px-1.5 py-0.5 text-[10px] font-semibold text-white">{cursor.name}</span>
+								<span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent)" }} />
+								<span style={{ borderRadius: 4, background: "rgba(15,17,23,0.86)", padding: "2px 6px", fontSize: 10, fontWeight: 600, color: "#fff" }}>{cursor.name}</span>
 							</div>
 						);
 					})}

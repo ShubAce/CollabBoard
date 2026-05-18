@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import api from "../api/axios";
+import Icon from "../components/ui/Icon.jsx";
 import useAuthStore from "../store/authStore";
 
 function AuthCard({ children }) {
@@ -47,7 +48,7 @@ function AuthCard({ children }) {
 				{/* Logo strip */}
 				<div style={{ padding: "24px 28px 0", display: "flex", alignItems: "center", gap: 8 }}>
 					<Link to="/" style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none" }}>
-						<span style={{ fontSize: 20 }}>⬡</span>
+						<Icon name="spark" size={20} style={{ color: "var(--accent)" }} />
 						<span style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)" }}>CollabBoard</span>
 					</Link>
 				</div>
@@ -123,7 +124,7 @@ export default function LoginPage() {
 						gap: 8,
 					}}
 				>
-					⚠ {error}
+					<Icon name="alert" size={16} /> {error}
 				</div>
 			)}
 
@@ -160,7 +161,7 @@ export default function LoginPage() {
 							type={showPw ? "text" : "password"}
 							value={form.password}
 							onChange={handleChange}
-							placeholder="••••••••"
+							placeholder="********"
 							autoComplete="current-password"
 							disabled={isSubmitting}
 							className={`input${fieldErrors.password ? " input-error" : ""}`}
@@ -182,7 +183,7 @@ export default function LoginPage() {
 								padding: 0,
 							}}
 						>
-							{showPw ? "🙈" : "👁"}
+							<Icon name={showPw ? "eyeOff" : "eye"} size={16} />
 						</button>
 					</div>
 					{fieldErrors.password && (
@@ -196,7 +197,7 @@ export default function LoginPage() {
 					className="btn btn-primary"
 					style={{ width: "100%", marginTop: 4, fontSize: 14, padding: "10px 16px" }}
 				>
-					{isSubmitting ? <><span className="spinner" /> Logging in...</> : "Log in →"}
+					{isSubmitting ? <><span className="spinner" /> Logging in...</> : "Log in"}
 				</button>
 			</form>
 
@@ -224,7 +225,7 @@ export default function LoginPage() {
 			<p style={{ textAlign: "center", marginTop: 20, fontSize: 14, color: "var(--text-secondary)" }}>
 				Don't have an account?{" "}
 				<Link to="/register" style={{ color: "var(--accent)", fontWeight: 500 }}>
-					Sign up →
+					Sign up
 				</Link>
 			</p>
 		</AuthCard>

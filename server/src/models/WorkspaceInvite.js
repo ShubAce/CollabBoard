@@ -22,7 +22,6 @@ const workspaceInviteSchema = new mongoose.Schema(
 	{ timestamps: true },
 );
 
-workspaceInviteSchema.index({ token: 1 });
 workspaceInviteSchema.index({ workspace: 1, status: 1, createdAt: -1 });
 
 export default mongoose.model("WorkspaceInvite", workspaceInviteSchema);

@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/axios";
+import Icon from "../components/ui/Icon.jsx";
 
 const TYPE_META = {
-	task_assigned:   { icon: "✅", label: "Task assigned",         accentColor: "var(--accent)", bgColor: "var(--accent-muted)" },
-	comment_mention: { icon: "💬", label: "Mentioned",             accentColor: "var(--warning)", bgColor: "var(--warning-muted)" },
-	workspace_invite:{ icon: "✉",  label: "Workspace invite",      accentColor: "var(--success)", bgColor: "var(--success-muted)" },
-	task_due:        { icon: "⏰", label: "Due reminder",           accentColor: "var(--danger)", bgColor: "var(--danger-muted)" },
+	task_assigned:   { icon: "check", label: "Task assigned",         accentColor: "var(--accent)", bgColor: "var(--accent-muted)" },
+	comment_mention: { icon: "chat", label: "Mentioned",             accentColor: "var(--warning)", bgColor: "var(--warning-muted)" },
+	workspace_invite:{ icon: "mail",  label: "Workspace invite",      accentColor: "var(--success)", bgColor: "var(--success-muted)" },
+	task_due:        { icon: "alert", label: "Due reminder",           accentColor: "var(--danger)", bgColor: "var(--danger-muted)" },
 };
 
 const formatRelative = (iso) => {
@@ -62,7 +63,7 @@ function NotifRow({ notif, onRead, onDelete }) {
 
 			{/* Icon */}
 			<div style={{ width: 36, height: 36, borderRadius: "var(--radius-md)", background: meta.bgColor, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0, color: meta.accentColor }}>
-				{meta.icon}
+				<Icon name={meta.icon} size={18} />
 			</div>
 
 			{/* Content */}
@@ -84,7 +85,7 @@ function NotifRow({ notif, onRead, onDelete }) {
 						onClick={(e) => { e.stopPropagation(); onRead(notif); }}
 						style={{ marginTop: 8, background: "var(--success-muted)", color: "var(--success)", border: "1px solid rgba(52,211,153,0.3)" }}
 					>
-						Review invite →
+						Review invite
 					</button>
 				)}
 				<span style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, display: "block" }}>{formatRelative(notif.createdAt)}</span>
@@ -99,7 +100,7 @@ function NotifRow({ notif, onRead, onDelete }) {
 					aria-label="Delete"
 					title="Delete notification"
 				>
-					✕
+					<Icon name="close" size={14} />
 				</button>
 			)}
 		</div>
@@ -181,7 +182,7 @@ export default function NotificationsPage() {
 				</div>
 				{unreadCount > 0 && (
 					<button type="button" onClick={markAllRead} disabled={markingAll} className="btn btn-ghost btn-sm">
-						{markingAll ? "Marking..." : "✓ Mark all read"}
+						{markingAll ? "Marking..." : <><Icon name="check" size={14} /> Mark all read</>}
 					</button>
 				)}
 			</div>
@@ -225,7 +226,7 @@ export default function NotificationsPage() {
 
 				{status === "ready" && filtered.length === 0 && (
 					<div style={{ padding: "64px 24px", textAlign: "center" }}>
-						<div style={{ fontSize: 40, marginBottom: 12 }}>🔔</div>
+						<div className="icon-box icon-box-accent empty-state-icon"><Icon name="bell" size={24} /></div>
 						<p style={{ fontSize: 15, fontWeight: 500, color: "var(--text-primary)", marginBottom: 6 }}>
 							{filter === "unread" ? "No unread notifications" : "All caught up!"}
 						</p>

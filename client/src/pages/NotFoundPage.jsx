@@ -20,7 +20,7 @@ export default function NotFoundPage() {
 					The page you're looking for doesn't exist or has been moved.
 				</p>
 				<div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-					<Link to="/" className="btn btn-primary btn-sm">← Back to home</Link>
+					<Link to="/" className="btn btn-primary btn-sm">Back to home</Link>
 					<Link to="/app" className="btn btn-ghost btn-sm">Dashboard</Link>
 				</div>
 			</div>

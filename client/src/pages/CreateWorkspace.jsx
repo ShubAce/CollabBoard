@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/axios";
+import Icon from "../components/ui/Icon.jsx";
 
 const WS_COLORS = ["#6C63FF", "#60A5FA", "#34D399", "#F87171", "#FBBF24", "#A78BFA", "#FB923C", "#F472B6"];
 
@@ -35,7 +36,7 @@ export default function CreateWorkspace() {
 			<div className="card" style={{ padding: 28 }}>
 				{error && (
 					<div style={{ background: "var(--danger-muted)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: "var(--radius-md)", padding: "10px 14px", fontSize: 14, color: "var(--danger)", marginBottom: 20 }}>
-						⚠ {error}
+						<span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><Icon name="alert" size={16} /> {error}</span>
 					</div>
 				)}
 
@@ -122,7 +123,7 @@ export default function CreateWorkspace() {
 							disabled={isSubmitting || !form.name.trim()}
 							className="btn btn-primary btn-sm"
 						>
-							{isSubmitting ? <><span className="spinner" style={{ width: 12, height: 12 }} /> Creating...</> : "Create workspace →"}
+							{isSubmitting ? <><span className="spinner" style={{ width: 12, height: 12 }} /> Creating...</> : "Create workspace"}
 						</button>
 					</div>
 				</form>

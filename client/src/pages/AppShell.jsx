@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useMatch, useNavigate } from "react-router-dom";
 import api from "../api/axios";
+import Icon from "../components/ui/Icon.jsx";
 import { getSocket } from "../socket";
 import useAuthStore from "../store/authStore";
 
@@ -98,17 +99,17 @@ export default function AppShell() {
 
 	const navLinks = workspaceId
 		? [
-				{ to: `/app/workspaces/${workspaceId}`, icon: "🏠", label: "Dashboard" },
-				{ to: `/app/workspaces/${workspaceId}/boards`, icon: "📋", label: "Boards" },
-				{ to: `/app/workspaces/${workspaceId}/chat`, icon: "💬", label: "Chat" },
-				{ to: `/app/workspaces/${workspaceId}/settings`, icon: "⚙", label: "Settings" },
+				{ to: `/app/workspaces/${workspaceId}`, icon: "home", label: "Dashboard" },
+				{ to: `/app/workspaces/${workspaceId}/boards`, icon: "board", label: "Boards" },
+				{ to: `/app/workspaces/${workspaceId}/chat`, icon: "chat", label: "Chat" },
+				{ to: `/app/workspaces/${workspaceId}/settings`, icon: "settings", label: "Settings" },
 		  ]
 		: [];
 
 	const globalLinks = [
-		{ to: "/app/workspaces", icon: "🏢", label: "Workspaces" },
-		{ to: "/app/notifications", icon: "🔔", label: "Notifications", badge: unreadCount },
-		{ to: "/app/profile", icon: "👤", label: "Profile" },
+		{ to: "/app/workspaces", icon: "briefcase", label: "Workspaces" },
+		{ to: "/app/notifications", icon: "bell", label: "Notifications", badge: unreadCount },
+		{ to: "/app/profile", icon: "user", label: "Profile" },
 	];
 
 	return (
@@ -127,7 +128,7 @@ export default function AppShell() {
 						borderBottom: `1px solid var(--border)`,
 					}}
 				>
-					<span style={{ fontSize: 20 }}>⬡</span>
+					<Icon name="spark" size={20} style={{ color: "var(--accent)" }} />
 					<span style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)" }}>CollabBoard</span>
 				</Link>
 
@@ -149,7 +150,7 @@ export default function AppShell() {
 								end={to === `/app/workspaces/${workspaceId}`}
 								className={({ isActive }) => `nav-item${isActive ? " active" : ""}`}
 							>
-								<span>{icon}</span>
+								<Icon name={icon} size={16} />
 								<span>{label}</span>
 							</NavLink>
 						))}
@@ -167,7 +168,7 @@ export default function AppShell() {
 							to={to}
 							className={({ isActive }) => `nav-item${isActive ? " active" : ""}`}
 						>
-							<span>{icon}</span>
+							<Icon name={icon} size={16} />
 							<span style={{ flex: 1 }}>{label}</span>
 							{badge > 0 && (
 								<span
@@ -226,7 +227,7 @@ export default function AppShell() {
 									className="dropdown-item"
 									onClick={() => setUserMenuOpen(false)}
 								>
-									👤 Profile
+									<Icon name="user" size={14} /> Profile
 								</Link>
 								<div style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />
 								<button
@@ -235,7 +236,7 @@ export default function AppShell() {
 									onClick={handleLogout}
 									style={{ width: "100%", textAlign: "left" }}
 								>
-									🚪 Log out
+									<Icon name="logOut" size={14} /> Log out
 								</button>
 							</div>
 						)}
@@ -262,7 +263,7 @@ export default function AppShell() {
 						}}
 						className="mobile-menu-btn"
 					>
-						☰
+						<Icon name="menu" size={18} />
 					</button>
 
 					{/* Breadcrumb */}
@@ -302,7 +303,7 @@ export default function AppShell() {
 							flexShrink: 0,
 						}}
 					>
-						🔔
+						<Icon name="bell" size={16} />
 						{unreadCount > 0 && (
 							<span
 								style={{

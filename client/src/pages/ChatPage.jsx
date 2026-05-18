@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import api from "../api/axios";
+import Icon from "../components/ui/Icon.jsx";
 import { getSocket } from "../socket";
 import useAuthStore from "../store/authStore";
 
@@ -180,7 +181,9 @@ export default function ChatPage() {
 			{/* Header */}
 			<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
 				<div>
-					<h1 style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>💬 Workspace Chat</h1>
+					<h1 style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
+						<Icon name="chat" size={16} /> Workspace Chat
+					</h1>
 					<p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>All messages visible to workspace members</p>
 				</div>
 				<div style={{ display: "flex", alignItems: "center", gap: 6, background: "var(--success-muted)", border: "1px solid rgba(52,211,153,0.3)", borderRadius: "var(--radius-full)", padding: "3px 10px" }}>
@@ -209,13 +212,13 @@ export default function ChatPage() {
 						{hasMore && (
 							<div style={{ textAlign: "center", marginBottom: 16 }}>
 								<button type="button" onClick={loadMore} disabled={loadingMore} className="btn btn-ghost btn-sm" style={{ fontSize: 12 }}>
-									{loadingMore ? <><span className="spinner" style={{ width: 11, height: 11 }} /> Loading...</> : "↑ Load older messages"}
+									{loadingMore ? <><span className="spinner" style={{ width: 11, height: 11 }} /> Loading...</> : "Load older messages"}
 								</button>
 							</div>
 						)}
 						{messages.length === 0 && (
 							<div style={{ textAlign: "center", padding: "64px 24px", color: "var(--text-secondary)" }}>
-								<div style={{ fontSize: 36, marginBottom: 12 }}>👋</div>
+								<div className="icon-box icon-box-accent empty-state-icon"><Icon name="chat" size={24} /></div>
 								<p style={{ fontSize: 15, fontWeight: 500, color: "var(--text-primary)", marginBottom: 6 }}>No messages yet</p>
 								<p style={{ fontSize: 13 }}>Be the first to say hello!</p>
 							</div>
@@ -326,10 +329,10 @@ export default function ChatPage() {
 							flexShrink: 0,
 						}}
 					>
-						↑
+						<Icon name="send" size={15} />
 					</button>
 				</div>
-				<p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6, textAlign: "right" }}>Enter to send · Shift+Enter for newline</p>
+				<p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6, textAlign: "right" }}>Enter to send / Shift+Enter for newline</p>
 			</div>
 		</div>
 	);

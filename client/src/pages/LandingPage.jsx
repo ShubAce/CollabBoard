@@ -1,23 +1,32 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import Icon from "../components/ui/Icon.jsx";
 import useAuthStore from "../store/authStore";
 
 const FEATURES = [
 	{
-		icon: "⚡",
+		icon: "spark",
 		title: "Real-time sync",
 		desc: "Changes appear instantly for every team member. No refreshing required.",
 	},
 	{
-		icon: "🎨",
+		icon: "whiteboard",
 		title: "Live whiteboard",
 		desc: "Draw together, see each other's cursors move live across the canvas.",
 	},
 	{
-		icon: "💬",
+		icon: "chat",
 		title: "Team chat",
 		desc: "One chat room per workspace with @mentions and typing indicators.",
 	},
+];
+
+const MOCK_TASKS = [
+	{ col: 0, title: "Fix login bug", priority: "#F87171", width: "34%" },
+	{ col: 1, title: "Design nav component", priority: "#FBBF24", width: "39%" },
+	{ col: 1, title: "Setup CI pipeline", priority: "#FB923C", width: "32%" },
+	{ col: 2, title: "Review PR #42", priority: "#34D399", width: "30%" },
+	{ col: 3, title: "Deploy to staging", priority: "#34D399", width: "36%" },
 ];
 
 function FeatureCard({ icon, title, desc }) {
@@ -46,7 +55,9 @@ function FeatureCard({ icon, title, desc }) {
 				e.currentTarget.style.boxShadow = "var(--shadow-card)";
 			}}
 		>
-			<span style={{ fontSize: 32 }}>{icon}</span>
+			<span className="icon-box icon-box-accent" style={{ width: 42, height: 42 }}>
+				<Icon name={icon} size={22} />
+			</span>
 			<p style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>{title}</p>
 			<p style={{ fontSize: 14, color: "var(--text-secondary)", margin: 0, lineHeight: 1.6 }}>{desc}</p>
 		</div>
@@ -90,7 +101,7 @@ export default function LandingPage() {
 				}}
 			>
 				<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-					<span style={{ fontSize: 22 }}>⬡</span>
+					<Icon name="spark" size={22} style={{ color: "var(--accent)" }} />
 					<span style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)" }}>CollabBoard</span>
 				</div>
 				<div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -111,7 +122,7 @@ export default function LandingPage() {
 						Log in
 					</Link>
 					<Link to="/register" className="btn btn-primary" style={{ fontSize: 14 }}>
-						Get started →
+						Get started
 					</Link>
 				</div>
 			</nav>
@@ -172,7 +183,7 @@ export default function LandingPage() {
 							marginBottom: 24,
 						}}
 					>
-						⚡ Real-time collaboration
+						<Icon name="spark" size={14} /> Real-time collaboration
 					</div>
 
 					<h1
@@ -199,7 +210,7 @@ export default function LandingPage() {
 							margin: "20px auto 0",
 						}}
 					>
-						Kanban boards, shared whiteboard, and team chat — all synced live across your whole team.
+						Kanban boards, shared whiteboard, and team chat - all synced live across your whole team.
 					</p>
 
 					<div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 36, flexWrap: "wrap" }}>
@@ -253,13 +264,7 @@ export default function LandingPage() {
 							})}
 						</div>
 						{/* Fake task cards */}
-						{[
-							{ col: 0, title: "Fix login bug", priority: "🔴" },
-							{ col: 1, title: "Design nav component", priority: "🟡" },
-							{ col: 1, title: "Setup CI pipeline", priority: "🟠" },
-							{ col: 2, title: "Review PR #42", priority: "🟢" },
-							{ col: 3, title: "Deploy to staging", priority: "🟢" },
-						].map((t, i) => (
+						{MOCK_TASKS.map((t, i) => (
 							<div
 								key={i}
 								style={{
@@ -273,11 +278,11 @@ export default function LandingPage() {
 									display: "inline-flex",
 									alignItems: "center",
 									gap: 6,
-									width: `${20 + Math.random() * 20}%`,
+									width: t.width,
 									marginLeft: `${t.col * 25}%`,
 								}}
 							>
-								{t.priority} {t.title}
+								<span style={{ width: 7, height: 7, borderRadius: "50%", background: t.priority }} /> {t.title}
 							</div>
 						))}
 					</div>
@@ -323,7 +328,7 @@ export default function LandingPage() {
 					color: "var(--text-muted)",
 				}}
 			>
-				© 2025 CollabBoard · Built with MERN + Socket.io + Redis
+				2025 CollabBoard / Built with MERN + Socket.io + Redis
 			</footer>
 		</div>
 	);

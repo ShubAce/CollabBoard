@@ -1,7 +1,8 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import api from "../api/axios";
-import useAuthStore from "../store/authStore";
+import Icon from "../components/ui/Icon.jsx";
 
 const WS_COLORS = ["#6C63FF", "#60A5FA", "#34D399", "#F87171", "#FBBF24", "#A78BFA", "#FB923C", "#F472B6"];
 
@@ -59,7 +60,7 @@ function CreateWorkspaceModal({ onClose, onCreated }) {
 			<div className="modal fade-in">
 				<div className="modal-header">
 					<h2 style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>Create workspace</h2>
-					<button type="button" onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 18, padding: 4 }}>✕</button>
+					<button type="button" onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4 }}><Icon name="close" size={18} /></button>
 				</div>
 				<form onSubmit={handleSubmit}>
 					<div className="modal-body" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -98,7 +99,7 @@ function CreateWorkspaceModal({ onClose, onCreated }) {
 					<div className="modal-footer">
 						<button type="button" onClick={onClose} className="btn btn-ghost btn-sm">Cancel</button>
 						<button type="submit" disabled={isSubmitting || !form.name.trim()} className="btn btn-primary btn-sm">
-							{isSubmitting ? <><span className="spinner" style={{ width: 12, height: 12 }} /> Creating...</> : "Create →"}
+							{isSubmitting ? <><span className="spinner" style={{ width: 12, height: 12 }} /> Creating...</> : "Create"}
 						</button>
 					</div>
 				</form>
@@ -108,7 +109,6 @@ function CreateWorkspaceModal({ onClose, onCreated }) {
 }
 
 export default function WorkspaceList() {
-	const user = useAuthStore((s) => s.user);
 	const [workspaces, setWorkspaces] = useState([]);
 	const [status, setStatus] = useState("loading");
 	const [error, setError] = useState("");
@@ -155,10 +155,10 @@ export default function WorkspaceList() {
 			{/* Empty state */}
 			{status === "ready" && workspaces.length === 0 && (
 				<div style={{ textAlign: "center", padding: "64px 24px", color: "var(--text-secondary)" }}>
-					<div style={{ fontSize: 48, marginBottom: 16 }}>🏢</div>
+					<div className="icon-box icon-box-accent empty-state-icon"><Icon name="briefcase" size={24} /></div>
 					<h2 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-primary)", marginBottom: 8 }}>No workspaces yet</h2>
 					<p style={{ fontSize: 14, marginBottom: 24 }}>Create your first workspace to start collaborating with your team.</p>
-					<button type="button" onClick={() => setShowCreate(true)} className="btn btn-primary">Create workspace →</button>
+					<button type="button" onClick={() => setShowCreate(true)} className="btn btn-primary">Create workspace</button>
 				</div>
 			)}
 
@@ -221,7 +221,7 @@ export default function WorkspaceList() {
 										<span className={`badge ${isOwner ? "badge-accent" : "badge-muted"}`}>
 											{ws.currentUserRole || "member"}
 										</span>
-										<span style={{ fontSize: 12, color: "var(--accent)", fontWeight: 500 }}>Open →</span>
+										<span style={{ fontSize: 12, color: "var(--accent)", fontWeight: 500 }}>Open</span>
 									</div>
 								</div>
 							</Link>

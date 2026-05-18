@@ -1,23 +1,38 @@
+/* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import api from "../api/axios";
+import Icon from "../components/ui/Icon.jsx";
 
 const TABS = ["general", "members", "danger"];
-
 const roleOptions = ["viewer", "editor", "admin"];
 
 const isEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
 const formatExpiry = (value) => {
 	if (!value) return "";
-	const date = new Date(value);
-	return date.toLocaleString([], {
-		month: "short",
-		day: "numeric",
-		hour: "numeric",
-		minute: "2-digit",
-	});
+	return new Date(value).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 };
+
+function SettingsCard({ title, subtitle, children, danger = false }) {
+	return (
+		<div className="page-panel" style={{ padding: 20, borderColor: danger ? "rgba(248,113,113,0.35)" : "var(--border)", background: danger ? "var(--danger-muted)" : "var(--bg-surface)" }}>
+			<h3 style={{ fontSize: 16, fontWeight: 600, color: danger ? "var(--danger)" : "var(--text-primary)", margin: 0 }}>{title}</h3>
+			{subtitle && <p style={{ fontSize: 13, color: danger ? "rgba(248,113,113,0.85)" : "var(--text-secondary)", margin: "4px 0 0" }}>{subtitle}</p>}
+			<div style={{ marginTop: 16 }}>{children}</div>
+		</div>
+	);
+}
+
+function RoleBadge({ role }) {
+	const style = {
+		owner: { background: "var(--warning-muted)", color: "var(--warning)" },
+		admin: { background: "var(--accent-muted)", color: "var(--accent)" },
+		editor: { background: "var(--bg-surface-2)", color: "var(--text-primary)" },
+		viewer: { background: "var(--bg-surface-2)", color: "var(--text-secondary)" },
+	}[role] || { background: "var(--bg-surface-2)", color: "var(--text-secondary)" };
+	return <span className="badge" style={{ ...style, textTransform: "capitalize" }}>{role}</span>;
+}
 
 export default function WorkspaceSettings() {
 	const { workspaceId } = useParams();
@@ -53,10 +68,7 @@ export default function WorkspaceSettings() {
 				api.get(`/workspaces/${workspaceId}/invites`),
 			]);
 			setWorkspace(workspaceRes.data);
-			setGeneralForm({
-				name: workspaceRes.data?.name || "",
-				description: workspaceRes.data?.description || "",
-			});
+			setGeneralForm({ name: workspaceRes.data?.name || "", description: workspaceRes.data?.description || "" });
 			setPendingInvites(invitesRes.data.invites || []);
 			setStatus("ready");
 		} catch (err) {
@@ -65,26 +77,8 @@ export default function WorkspaceSettings() {
 		}
 	};
 
-	const handleGeneralSave = async (event) => {
-		event.preventDefault();
-		setSavingGeneral(true);
-		setGeneralMessage("");
-		setGeneralError("");
-		try {
-			const { data } = await api.patch(`/workspaces/${workspaceId}`, generalForm);
-			setWorkspace(data);
-			setGeneralMessage("Workspace details updated.");
-		} catch (err) {
-			setGeneralError(err.response?.data?.message || "Failed to update workspace");
-		} finally {
-			setSavingGeneral(false);
-		}
-	};
-
 	useEffect(() => {
-		if (workspaceId) {
-			loadData();
-		}
+		if (workspaceId) loadData();
 	}, [workspaceId]);
 
 	useEffect(() => {
@@ -117,22 +111,33 @@ export default function WorkspaceSettings() {
 		return !results.some((result) => result.email?.toLowerCase() === trimmed);
 	}, [query, results]);
 
+	const handleGeneralSave = async (event) => {
+		event.preventDefault();
+		setSavingGeneral(true);
+		setGeneralMessage("");
+		setGeneralError("");
+		try {
+			const { data } = await api.patch(`/workspaces/${workspaceId}`, generalForm);
+			setWorkspace(data);
+			setGeneralMessage("Workspace details updated.");
+		} catch (err) {
+			setGeneralError(err.response?.data?.message || "Failed to update workspace");
+		} finally {
+			setSavingGeneral(false);
+		}
+	};
+
 	const handleInvite = async (email) => {
 		if (!email) return;
 		setSubmittingInvite(true);
 		setInviteError("");
 		setInviteStatus("");
 		try {
-			const { data } = await api.post(`/workspaces/${workspaceId}/invite`, {
-				email,
-				role: inviteRole,
-			});
+			const { data } = await api.post(`/workspaces/${workspaceId}/invite`, { email, role: inviteRole });
 			setInviteStatus(data.message || "Invite sent");
 			setQuery("");
 			setResults([]);
-			if (data.invite) {
-				setPendingInvites((prev) => [data.invite, ...prev]);
-			}
+			if (data.invite) setPendingInvites((prev) => [data.invite, ...prev]);
 		} catch (err) {
 			setInviteError(err.response?.data?.message || "Failed to send invite");
 		} finally {
@@ -184,10 +189,7 @@ export default function WorkspaceSettings() {
 			await api.delete(`/workspaces/${workspaceId}/members/${userId}`);
 			setWorkspace((prev) => ({
 				...prev,
-				members: prev.members.filter((member) => {
-					const memberUserId = member.user?._id || member.user;
-					return memberUserId !== userId;
-				}),
+				members: prev.members.filter((member) => (member.user?._id || member.user) !== userId),
 			}));
 			setMemberMessage("Member removed.");
 		} catch (err) {
@@ -215,293 +217,163 @@ export default function WorkspaceSettings() {
 
 	if (status === "loading") {
 		return (
-			<section className="rounded-2xl border border-ghost-white-200 bg-white/90 p-6 shadow-sm">
-				<p className="text-sm text-jet-black-500">Loading workspace settings...</p>
-			</section>
+			<div className="page-panel fade-in" style={{ padding: 24 }}>
+				<div className="skeleton" style={{ height: 28, width: 240, marginBottom: 12 }} />
+				<div className="skeleton" style={{ height: 14, width: 180, marginBottom: 28 }} />
+				<div className="skeleton" style={{ height: 240 }} />
+			</div>
 		);
 	}
 
-	if (status === "error") {
-		return (
-			<section className="rounded-2xl border border-ghost-white-200 bg-white/90 p-6 shadow-sm">
-				<p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
-			</section>
-		);
-	}
+	if (status === "error") return <div className="message-error">{error}</div>;
 
 	return (
-		<section className="rounded-2xl border border-ghost-white-200 bg-white/90 p-6 shadow-sm">
-			<div className="flex flex-wrap items-center justify-between gap-4">
-				<div>
-					<h2 className="text-2xl font-semibold text-jet-black-900 font-display">Workspace Settings</h2>
-					<p className="mt-1 text-sm text-jet-black-500">{workspace?.name}</p>
+		<section className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+			<div className="page-panel" style={{ padding: 20 }}>
+				<div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+					<div>
+						<h1 className="page-title">Workspace Settings</h1>
+						<p className="page-subtitle">{workspace?.name}</p>
+					</div>
+					<Link to={`/app/workspaces/${workspaceId}`} className="btn btn-ghost btn-sm">
+						<Icon name="arrowLeft" size={14} /> Back to workspace
+					</Link>
 				</div>
-				<Link
-					to={`/app/workspaces/${workspaceId}`}
-					className="inline-flex items-center justify-center rounded-xl bg-space-indigo-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-space-indigo-600"
-				>
-					Back to workspace
-				</Link>
-			</div>
-
-			<div className="mt-6 flex flex-wrap gap-2">
-				{TABS.map((tab) => (
-					<button
-						key={tab}
-						type="button"
-						onClick={() => setActiveTab(tab)}
-						className={`rounded-xl px-4 py-2 text-xs font-semibold capitalize transition ${
-							activeTab === tab
-								? "bg-space-indigo-500 text-white"
-								: "border border-ghost-white-200 text-jet-black-700 hover:bg-ghost-white-100"
-						}`}
-					>
-						{tab === "danger" ? "Danger Zone" : tab}
-					</button>
-				))}
+				<div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 18 }}>
+					{TABS.map((tab) => (
+						<button key={tab} type="button" onClick={() => setActiveTab(tab)} className={`tab-button${activeTab === tab ? " active" : ""}`}>
+							{tab === "general" && <Icon name="settings" size={14} />}
+							{tab === "members" && <Icon name="users" size={14} />}
+							{tab === "danger" && <Icon name="alert" size={14} />}
+							{tab === "danger" ? "Danger Zone" : tab}
+						</button>
+					))}
+				</div>
 			</div>
 
 			{activeTab === "general" && (
-				<form
-					onSubmit={handleGeneralSave}
-					className="mt-6 rounded-xl border border-ghost-white-200 bg-ghost-white-100/70 p-4"
-				>
-					<h3 className="text-lg font-semibold text-jet-black-900">General</h3>
-					<div className="mt-4 grid gap-4 md:grid-cols-2">
-						<label className="flex flex-col gap-2 text-sm font-medium text-jet-black-700">
-							Workspace name
-							<input
-								value={generalForm.name}
-								onChange={(event) => setGeneralForm((prev) => ({ ...prev, name: event.target.value }))}
-								required
-								className="rounded-xl border border-ghost-white-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-space-indigo-400/30"
-							/>
-						</label>
-						<label className="flex flex-col gap-2 text-sm font-medium text-jet-black-700">
-							Description
-							<input
-								value={generalForm.description}
-								onChange={(event) => setGeneralForm((prev) => ({ ...prev, description: event.target.value }))}
-								className="rounded-xl border border-ghost-white-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-space-indigo-400/30"
-							/>
-						</label>
-					</div>
-					<p className="mt-4 text-xs text-jet-black-500">Slug: {workspace?.slug}</p>
-					<div className="mt-4 flex flex-wrap items-center gap-3">
-						<button
-							type="submit"
-							disabled={savingGeneral}
-							className="rounded-xl bg-space-indigo-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-space-indigo-600 disabled:opacity-50"
-						>
-							{savingGeneral ? "Saving..." : "Save changes"}
-						</button>
-						{generalMessage && <span className="text-sm text-emerald-700">{generalMessage}</span>}
-						{generalError && <span className="text-sm text-red-600">{generalError}</span>}
-					</div>
-				</form>
+				<SettingsCard title="General" subtitle="Rename this workspace and keep its purpose visible to members.">
+					<form onSubmit={handleGeneralSave} style={{ display: "grid", gap: 16 }}>
+						<div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
+							<label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, fontWeight: 500, color: "var(--text-secondary)" }}>
+								Workspace name
+								<input value={generalForm.name} onChange={(event) => setGeneralForm((prev) => ({ ...prev, name: event.target.value }))} required className="input" />
+							</label>
+							<label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, fontWeight: 500, color: "var(--text-secondary)" }}>
+								Description
+								<input value={generalForm.description} onChange={(event) => setGeneralForm((prev) => ({ ...prev, description: event.target.value }))} className="input" />
+							</label>
+						</div>
+						<p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>Slug: {workspace?.slug}</p>
+						<div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
+							<button type="submit" disabled={savingGeneral} className="btn btn-primary btn-sm">{savingGeneral ? "Saving..." : "Save changes"}</button>
+							{generalMessage && <span className="message-success">{generalMessage}</span>}
+							{generalError && <span className="message-error">{generalError}</span>}
+						</div>
+					</form>
+				</SettingsCard>
 			)}
 
 			{activeTab === "members" && (
-				<div className="mt-6 grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-					<div className="space-y-6">
-						<div className="rounded-xl border border-ghost-white-200 bg-ghost-white-100/70 p-4">
-							<h3 className="text-lg font-semibold text-jet-black-900">Invite Members</h3>
-							<p className="mt-1 text-sm text-jet-black-500">Search existing users or send an email invite.</p>
-							<div className="mt-4 flex flex-wrap gap-3">
-								<div className="relative min-w-[240px] flex-1">
-									<input
-										value={query}
-										onChange={(event) => setQuery(event.target.value)}
-										placeholder="Search by name or email"
-										className="w-full rounded-xl border border-ghost-white-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-space-indigo-400/30"
-									/>
+				<div style={{ display: "grid", gap: 18, gridTemplateColumns: "minmax(0, 1.15fr) minmax(280px, 0.85fr)" }}>
+					<div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+						<SettingsCard title="Invite Members" subtitle="Search an existing account or send an email invite.">
+							<div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+								<div style={{ position: "relative", minWidth: 240, flex: 1 }}>
+									<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by name or email" className="input" />
 									{(query.trim() || isSearching) && (
-										<div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-10 rounded-xl border border-ghost-white-200 bg-white p-2 shadow-lg">
-											{isSearching && <p className="px-2 py-2 text-xs text-jet-black-500">Searching...</p>}
+										<div className="dropdown" style={{ left: 0, right: 0, top: "calc(100% + 8px)", minWidth: "100%" }}>
+											{isSearching && <p style={{ padding: "10px 12px", margin: 0, fontSize: 12, color: "var(--text-muted)" }}>Searching...</p>}
 											{!isSearching && results.map((result) => (
-												<button
-													key={result._id}
-													type="button"
-													onMouseDown={() => handleInvite(result.email)}
-													className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left transition hover:bg-ghost-white-100"
-												>
-													<span>
-														<span className="block text-sm font-semibold text-jet-black-900">{result.name}</span>
-														<span className="block text-xs text-jet-black-500">{result.email}</span>
-													</span>
-													<span className="text-xs font-semibold text-space-indigo-600">Invite</span>
+												<button key={result._id} type="button" onMouseDown={() => handleInvite(result.email)} className="dropdown-item" style={{ width: "100%", justifyContent: "space-between", textAlign: "left" }}>
+													<span><strong style={{ display: "block", color: "var(--text-primary)" }}>{result.name}</strong><span style={{ fontSize: 12 }}>{result.email}</span></span>
+													<span style={{ color: "var(--accent)", fontWeight: 600 }}>Invite</span>
 												</button>
 											))}
 											{!isSearching && !results.length && emailFallbackVisible && (
-												<button
-													type="button"
-													onMouseDown={() => handleInvite(query.trim())}
-													className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left transition hover:bg-ghost-white-100"
-												>
-													<span>
-														<span className="block text-sm font-semibold text-jet-black-900">{query.trim()}</span>
-														<span className="block text-xs text-jet-black-500">No account found. Send invite link.</span>
-													</span>
-													<span className="text-xs font-semibold text-emerald-600">Email invite</span>
+												<button type="button" onMouseDown={() => handleInvite(query.trim())} className="dropdown-item" style={{ width: "100%", justifyContent: "space-between", textAlign: "left" }}>
+													<span><strong style={{ display: "block", color: "var(--text-primary)" }}>{query.trim()}</strong><span style={{ fontSize: 12 }}>Send invite link</span></span>
+													<span style={{ color: "var(--success)", fontWeight: 600 }}>Email invite</span>
 												</button>
 											)}
-											{!isSearching && !results.length && !emailFallbackVisible && (
-												<p className="px-2 py-2 text-xs text-jet-black-500">No matching users.</p>
-											)}
+											{!isSearching && !results.length && !emailFallbackVisible && <p style={{ padding: "10px 12px", margin: 0, fontSize: 12, color: "var(--text-muted)" }}>No matching users.</p>}
 										</div>
 									)}
 								</div>
-								<select
-									value={inviteRole}
-									onChange={(event) => setInviteRole(event.target.value)}
-									className="rounded-xl border border-ghost-white-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-space-indigo-400/30"
-								>
-									{roleOptions.map((role) => (
-										<option
-											key={role}
-											value={role}
-										>
-											{role}
-										</option>
-									))}
+								<select value={inviteRole} onChange={(event) => setInviteRole(event.target.value)} className="input" style={{ width: 130 }}>
+									{roleOptions.map((role) => <option key={role} value={role}>{role}</option>)}
 								</select>
-								<button
-									type="button"
-									onClick={() => handleInvite(query.trim())}
-									disabled={submittingInvite || !isEmail(query.trim())}
-									className="rounded-xl bg-space-indigo-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-space-indigo-600 disabled:opacity-50"
-								>
+								<button type="button" onClick={() => handleInvite(query.trim())} disabled={submittingInvite || !isEmail(query.trim())} className="btn btn-primary">
 									{submittingInvite ? "Sending..." : "Send invite"}
 								</button>
 							</div>
-							{inviteStatus && <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{inviteStatus}</p>}
-							{inviteError && <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{inviteError}</p>}
-						</div>
+							{inviteStatus && <p className="message-success" style={{ marginTop: 12 }}>{inviteStatus}</p>}
+							{inviteError && <p className="message-error" style={{ marginTop: 12 }}>{inviteError}</p>}
+						</SettingsCard>
 
-						<div className="rounded-xl border border-ghost-white-200 bg-ghost-white-100/70 p-4">
-							<h3 className="text-lg font-semibold text-jet-black-900">Members</h3>
-							{memberMessage && <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{memberMessage}</p>}
-							{memberError && <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{memberError}</p>}
-							<ul className="mt-3 space-y-3">
+						<SettingsCard title="Members">
+							{memberMessage && <p className="message-success">{memberMessage}</p>}
+							{memberError && <p className="message-error">{memberError}</p>}
+							<div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: memberMessage || memberError ? 12 : 0 }}>
 								{workspace?.members?.map((member) => {
 									const memberUserId = member.user?._id || member.user;
 									const isOwner = member.role === "owner";
 									return (
-										<li
-											key={memberUserId}
-											className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ghost-white-200 bg-white px-3 py-3"
-										>
+										<div key={memberUserId} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12, background: "var(--bg-surface-2)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: 12 }}>
 											<div>
-												<p className="text-sm font-semibold text-jet-black-900">{member.user?.name || "Unknown user"}</p>
-												<p className="text-xs text-jet-black-500">{member.user?.email || ""}</p>
+												<p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>{member.user?.name || "Unknown user"}</p>
+												<p style={{ margin: "3px 0 0", fontSize: 12, color: "var(--text-muted)" }}>{member.user?.email || ""}</p>
 											</div>
-											<div className="flex flex-wrap items-center gap-2">
-												{isOwner ? (
-													<span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-														owner
-													</span>
-												) : (
-													<select
-														value={member.role}
-														onChange={(event) => handleRoleChange(memberUserId, event.target.value)}
-														className="rounded-lg border border-ghost-white-200 bg-white px-2 py-1.5 text-xs font-semibold text-jet-black-700 focus:outline-none focus:ring-2 focus:ring-space-indigo-400/30"
-													>
-														{roleOptions.map((role) => (
-															<option
-																key={role}
-																value={role}
-															>
-																{role}
-															</option>
-														))}
+											<div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+												{isOwner ? <RoleBadge role="owner" /> : (
+													<select value={member.role} onChange={(event) => handleRoleChange(memberUserId, event.target.value)} className="input" style={{ width: 110, padding: "6px 10px", fontSize: 12 }}>
+														{roleOptions.map((role) => <option key={role} value={role}>{role}</option>)}
 													</select>
 												)}
-												{!isOwner && (
-													<button
-														type="button"
-														onClick={() => handleRemoveMember(memberUserId)}
-														className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-50"
-													>
-														Remove
-													</button>
-												)}
+												{!isOwner && <button type="button" onClick={() => handleRemoveMember(memberUserId)} className="btn btn-danger btn-sm">Remove</button>}
 											</div>
-										</li>
+										</div>
 									);
 								})}
-							</ul>
-						</div>
+							</div>
+						</SettingsCard>
 					</div>
 
-					<div className="rounded-xl border border-ghost-white-200 bg-ghost-white-100/70 p-4">
-						<h3 className="text-lg font-semibold text-jet-black-900">Pending Invitations</h3>
+					<SettingsCard title="Pending Invitations">
 						{pendingInvites.length ? (
-							<ul className="mt-4 space-y-3">
+							<div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
 								{pendingInvites.map((invite) => (
-									<li
-										key={invite._id}
-										className="rounded-xl border border-ghost-white-200 bg-white px-3 py-3"
-									>
-										<div className="flex items-start justify-between gap-3">
-											<div>
-												<p className="text-sm font-semibold text-jet-black-900">{invite.email}</p>
-												<p className="mt-1 text-xs text-jet-black-500">
-													{invite.role} role
-													{invite.expiresAt ? ` · Expires ${formatExpiry(invite.expiresAt)}` : ""}
-												</p>
-												{invite.invitedBy?.name && (
-													<p className="mt-1 text-xs text-jet-black-500">Sent by {invite.invitedBy.name}</p>
-												)}
-											</div>
-											<button
-												type="button"
-												onClick={() => handleRevoke(invite._id)}
-												className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-50"
-											>
-												Revoke
-											</button>
-											{invite.inviteUrl && (
-												<button
-													type="button"
-													onClick={() => copyInviteLink(invite.inviteUrl)}
-													className="rounded-lg border border-ghost-white-200 px-3 py-1.5 text-xs font-semibold text-jet-black-700 transition hover:bg-ghost-white-100"
-												>
-													Copy link
-												</button>
-											)}
+									<div key={invite._id} style={{ background: "var(--bg-surface-2)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: 12 }}>
+										<p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>{invite.email}</p>
+										<p style={{ margin: "5px 0 0", fontSize: 12, color: "var(--text-muted)" }}>
+											{invite.role} role{invite.expiresAt ? ` - Expires ${formatExpiry(invite.expiresAt)}` : ""}
+										</p>
+										{invite.invitedBy?.name && <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--text-muted)" }}>Sent by {invite.invitedBy.name}</p>}
+										<div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
+											<button type="button" onClick={() => handleRevoke(invite._id)} className="btn btn-danger btn-sm">Revoke</button>
+											{invite.inviteUrl && <button type="button" onClick={() => copyInviteLink(invite.inviteUrl)} className="btn btn-ghost btn-sm">Copy link</button>}
 										</div>
-									</li>
+									</div>
 								))}
-							</ul>
+							</div>
 						) : (
-							<p className="mt-4 text-sm text-jet-black-500">No pending invites.</p>
+							<p style={{ margin: 0, fontSize: 14, color: "var(--text-secondary)" }}>No pending invites.</p>
 						)}
-					</div>
+					</SettingsCard>
 				</div>
 			)}
 
 			{activeTab === "danger" && (
-				<div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4">
-					<h3 className="text-lg font-semibold text-red-700">Danger Zone</h3>
-					<p className="mt-2 text-sm text-red-600">Deleting this workspace removes its boards, tasks, chat messages, whiteboard snapshots, and activity history.</p>
-					<label className="mt-4 flex max-w-md flex-col gap-2 text-sm font-medium text-red-700">
+				<SettingsCard title="Danger Zone" subtitle="Deleting this workspace removes boards, tasks, chat messages, whiteboard snapshots, and activity history." danger>
+					<label style={{ display: "flex", maxWidth: 420, flexDirection: "column", gap: 8, fontSize: 13, fontWeight: 600, color: "var(--danger)" }}>
 						Type {workspace?.name} to confirm
-						<input
-							value={deleteConfirm}
-							onChange={(event) => setDeleteConfirm(event.target.value)}
-							className="rounded-xl border border-red-200 bg-white px-3 py-2 text-sm text-jet-black-900 focus:outline-none focus:ring-2 focus:ring-red-300"
-						/>
+						<input value={deleteConfirm} onChange={(event) => setDeleteConfirm(event.target.value)} className="input" />
 					</label>
-					<button
-						type="button"
-						onClick={handleDeleteWorkspace}
-						disabled={deletingWorkspace}
-						className="mt-4 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
-					>
+					<button type="button" onClick={handleDeleteWorkspace} disabled={deletingWorkspace} className="btn btn-danger" style={{ marginTop: 14 }}>
 						{deletingWorkspace ? "Deleting..." : "Delete workspace"}
 					</button>
-					{deleteError && <p className="mt-3 text-sm text-red-700">{deleteError}</p>}
-				</div>
+					{deleteError && <p className="message-error" style={{ marginTop: 12 }}>{deleteError}</p>}
+				</SettingsCard>
 			)}
 		</section>
 	);

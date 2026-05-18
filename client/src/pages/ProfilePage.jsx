@@ -1,5 +1,7 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useRef, useState } from "react";
 import api from "../api/axios";
+import Icon from "../components/ui/Icon.jsx";
 import useAuthStore from "../store/authStore";
 
 const WS_COLORS = ["#6C63FF", "#60A5FA", "#34D399", "#F87171", "#FBBF24", "#A78BFA", "#FB923C", "#F472B6"];
@@ -168,7 +170,7 @@ export default function ProfilePage() {
 								color: "#fff",
 							}}
 						>
-							{uploadingAvatar ? <span className="spinner" style={{ width: 10, height: 10 }} /> : "✎"}
+							{uploadingAvatar ? <span className="spinner" style={{ width: 10, height: 10 }} /> : <Icon name="edit" size={12} />}
 						</button>
 						<input
 							ref={avatarInputRef}
@@ -183,7 +185,10 @@ export default function ProfilePage() {
 						<p style={{ fontSize: 18, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>{user?.name || "Your Name"}</p>
 						<p style={{ fontSize: 14, color: "var(--text-secondary)", margin: "4px 0 0" }}>{user?.email || ""}</p>
 						<p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>
-							{user?.provider === "google" ? "🔗 Google account" : "🔒 Email account"}
+							<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+								<Icon name={user?.provider === "google" ? "user" : "lock"} size={13} />
+								{user?.provider === "google" ? "Google account" : "Email account"}
+							</span>
 						</p>
 					</div>
 				</div>
@@ -217,8 +222,8 @@ export default function ProfilePage() {
 						<button type="submit" disabled={savingProfile} className="btn btn-primary btn-sm">
 							{savingProfile ? <><span className="spinner" style={{ width: 12, height: 12 }} /> Saving...</> : "Save changes"}
 						</button>
-						{profileStatus && <span style={{ fontSize: 13, color: "var(--success)" }}>✓ {profileStatus}</span>}
-						{profileError && <span style={{ fontSize: 13, color: "var(--danger)" }}>⚠ {profileError}</span>}
+						{profileStatus && <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--success)" }}><Icon name="check" size={14} /> {profileStatus}</span>}
+						{profileError && <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--danger)" }}><Icon name="alert" size={14} /> {profileError}</span>}
 					</div>
 				</form>
 			</SectionCard>
@@ -236,11 +241,11 @@ export default function ProfilePage() {
 									onChange={(e) => setPasswordForm((prev) => ({ ...prev, currentPassword: e.target.value }))}
 									required
 									className="input"
-									placeholder="••••••••"
+									placeholder="********"
 									style={{ paddingRight: 44 }}
 								/>
 								<button type="button" onClick={() => setShowCurrentPw((v) => !v)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14, padding: 0 }}>
-									{showCurrentPw ? "🙈" : "👁"}
+									<Icon name={showCurrentPw ? "eyeOff" : "eye"} size={16} />
 								</button>
 							</div>
 						</div>
@@ -255,11 +260,11 @@ export default function ProfilePage() {
 									required
 									minLength={8}
 									className="input"
-									placeholder="••••••••"
+									placeholder="********"
 									style={{ paddingRight: 44 }}
 								/>
 								<button type="button" onClick={() => setShowNewPw((v) => !v)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14, padding: 0 }}>
-									{showNewPw ? "🙈" : "👁"}
+									<Icon name={showNewPw ? "eyeOff" : "eye"} size={16} />
 								</button>
 							</div>
 							{passwordForm.newPassword && (
@@ -276,8 +281,8 @@ export default function ProfilePage() {
 							<button type="submit" disabled={savingPassword} className="btn btn-primary btn-sm">
 								{savingPassword ? <><span className="spinner" style={{ width: 12, height: 12 }} /> Updating...</> : "Update password"}
 							</button>
-							{passwordStatus && <span style={{ fontSize: 13, color: "var(--success)" }}>✓ {passwordStatus}</span>}
-							{passwordError && <span style={{ fontSize: 13, color: "var(--danger)" }}>⚠ {passwordError}</span>}
+							{passwordStatus && <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--success)" }}><Icon name="check" size={14} /> {passwordStatus}</span>}
+							{passwordError && <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--danger)" }}><Icon name="alert" size={14} /> {passwordError}</span>}
 						</div>
 					</form>
 				</SectionCard>

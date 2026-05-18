@@ -1,7 +1,8 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import api from "../api/axios";
-import useAuthStore from "../store/authStore";
+import Icon from "../components/ui/Icon.jsx";
 
 const WS_COLORS = ["#6C63FF", "#60A5FA", "#34D399", "#F87171", "#FBBF24", "#A78BFA", "#FB923C", "#F472B6"];
 function getInitials(name = "") { return name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2); }
@@ -58,7 +59,7 @@ function CreateBoardModal({ workspaceId, onClose, onCreated }) {
 			<div className="modal fade-in" style={{ maxWidth: 420 }}>
 				<div className="modal-header">
 					<h2 style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>Create board</h2>
-					<button type="button" onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 18, padding: 4 }}>✕</button>
+					<button type="button" onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4 }}><Icon name="close" size={18} /></button>
 				</div>
 				<form onSubmit={handleSubmit}>
 					<div className="modal-body" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -84,7 +85,7 @@ function CreateBoardModal({ workspaceId, onClose, onCreated }) {
 					<div className="modal-footer">
 						<button type="button" onClick={onClose} className="btn btn-ghost btn-sm">Cancel</button>
 						<button type="submit" disabled={isSubmitting || !name.trim()} className="btn btn-primary btn-sm">
-							{isSubmitting ? <><span className="spinner" style={{ width: 12, height: 12 }} /> Creating...</> : "Create board →"}
+							{isSubmitting ? <><span className="spinner" style={{ width: 12, height: 12 }} /> Creating...</> : "Create board"}
 						</button>
 					</div>
 				</form>
@@ -95,7 +96,6 @@ function CreateBoardModal({ workspaceId, onClose, onCreated }) {
 
 export default function WorkspaceDashboard() {
 	const { workspaceId } = useParams();
-	const user = useAuthStore((s) => s.user);
 	const [workspace, setWorkspace] = useState(null);
 	const [boards, setBoards] = useState([]);
 	const [activity, setActivity] = useState([]);
@@ -139,8 +139,6 @@ export default function WorkspaceDashboard() {
 	if (error) return <div style={{ background: "var(--danger-muted)", borderRadius: "var(--radius-md)", padding: "12px 16px", color: "var(--danger)" }}>{error}</div>;
 
 	const members = workspace?.members || [];
-	const onlineMembers = members.filter((m) => m.isOnline);
-
 	return (
 		<div className="fade-in">
 			{/* Header */}
@@ -153,7 +151,7 @@ export default function WorkspaceDashboard() {
 						<div>
 							<h1 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>{workspace?.name}</h1>
 							<p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "2px 0 0" }}>
-								{members.length} member{members.length !== 1 ? "s" : ""} · {boards.length} board{boards.length !== 1 ? "s" : ""} · <span style={{ textTransform: "capitalize" }}>You're {workspace?.currentUserRole === "owner" ? "an" : "a"} {workspace?.currentUserRole || "member"}</span>
+								{members.length} member{members.length !== 1 ? "s" : ""} / {boards.length} board{boards.length !== 1 ? "s" : ""} / <span style={{ textTransform: "capitalize" }}>You're {workspace?.currentUserRole === "owner" ? "an" : "a"} {workspace?.currentUserRole || "member"}</span>
 							</p>
 						</div>
 					</div>
@@ -168,7 +166,7 @@ export default function WorkspaceDashboard() {
 
 			{boards.length === 0 ? (
 				<div style={{ textAlign: "center", padding: "40px 24px", background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", marginBottom: 32 }}>
-					<div style={{ fontSize: 40, marginBottom: 12 }}>📋</div>
+					<div className="icon-box icon-box-accent empty-state-icon"><Icon name="board" size={24} /></div>
 					<p style={{ fontSize: 15, fontWeight: 500, color: "var(--text-primary)", marginBottom: 8 }}>No boards yet</p>
 					<p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16 }}>Create a board to start organizing tasks.</p>
 					<button type="button" onClick={() => setShowCreate(true)} className="btn btn-primary btn-sm">+ Create board</button>
@@ -183,7 +181,7 @@ export default function WorkspaceDashboard() {
 								onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 6px 24px rgba(0,0,0,0.4)"; }}
 								onMouseLeave={(e) => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = ""; }}
 							>
-								<div style={{ fontSize: 22, marginBottom: 10 }}>📋</div>
+								<div className="icon-box icon-box-accent" style={{ width: 36, height: 36, marginBottom: 10 }}><Icon name="board" size={18} /></div>
 								<p style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 8px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{board.name}</p>
 								{/* Mini column bars */}
 								<div style={{ display: "flex", gap: 4, marginBottom: 10, height: 4 }}>
@@ -196,7 +194,7 @@ export default function WorkspaceDashboard() {
 										<div key={i} style={{ flex: 1, height: 4, background: c.color, borderRadius: 2, opacity: 0.6 }} />
 									))}
 								</div>
-								<p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>Click to open →</p>
+								<p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>Click to open</p>
 							</div>
 						</Link>
 					))}
@@ -268,7 +266,7 @@ export default function WorkspaceDashboard() {
 
 			<div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
 				<Link to={`/app/workspaces/${workspaceId}/settings`} style={{ fontSize: 13, color: "var(--accent)" }}>
-					Manage members →
+					Manage members
 				</Link>
 			</div>
 

@@ -71,7 +71,7 @@ function App() {
 	}, [accessToken, clearAuth, setAuth, setHydrating, user]);
 
 	return (
-		<div className="min-h-screen bg-linear-to-b from-ghost-white-50 via-ghost-white-100 to-space-indigo-50 text-jet-black-900 font-sans">
+		<div className="min-h-screen bg-base text-primary font-sans">
 			<Routes>
 				<Route
 					path="/"

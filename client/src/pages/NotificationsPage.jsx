@@ -3,42 +3,10 @@ import { useNavigate } from "react-router-dom";
 import api from "../api/axios";
 
 const TYPE_META = {
-	task_assigned: {
-		icon: (
-			<svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 text-space-indigo-500">
-				<path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
-			</svg>
-		),
-		label: "Task assigned",
-		color: "bg-space-indigo-50",
-	},
-	comment_mention: {
-		icon: (
-			<svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 text-amber-500">
-				<path fillRule="evenodd" d="M10 2c-2.236 0-4.43.18-6.57.524C1.993 2.755 1 4.014 1 5.426v5.148c0 1.413.993 2.67 2.43 2.902.848.137 1.705.248 2.57.331v3.443a.75.75 0 001.28.53l3.658-3.9c1.26.028 2.51-.025 3.737-.157 1.44-.232 2.435-1.49 2.435-2.903V5.426c0-1.413-.994-2.67-2.43-2.902A41.97 41.97 0 0010 2z" clipRule="evenodd" />
-			</svg>
-		),
-		label: "Mentioned in comment",
-		color: "bg-amber-50",
-	},
-	workspace_invite: {
-		icon: (
-			<svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 text-emerald-500">
-				<path d="M11 5a3 3 0 11-6 0 3 3 0 016 0zM2.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 018 18a9.953 9.953 0 01-5.385-1.572zM16.25 5.75a.75.75 0 00-1.5 0v2h-2a.75.75 0 000 1.5h2v2a.75.75 0 001.5 0v-2h2a.75.75 0 000-1.5h-2v-2z" />
-			</svg>
-		),
-		label: "Workspace invite",
-		color: "bg-emerald-50",
-	},
-	task_due: {
-		icon: (
-			<svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 text-rose-500">
-				<path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z" clipRule="evenodd" />
-			</svg>
-		),
-		label: "Task due reminder",
-		color: "bg-rose-50",
-	},
+	task_assigned:   { icon: "✅", label: "Task assigned",         accentColor: "var(--accent)", bgColor: "var(--accent-muted)" },
+	comment_mention: { icon: "💬", label: "Mentioned",             accentColor: "var(--warning)", bgColor: "var(--warning-muted)" },
+	workspace_invite:{ icon: "✉",  label: "Workspace invite",      accentColor: "var(--success)", bgColor: "var(--success-muted)" },
+	task_due:        { icon: "⏰", label: "Due reminder",           accentColor: "var(--danger)", bgColor: "var(--danger-muted)" },
 };
 
 const formatRelative = (iso) => {
@@ -51,56 +19,113 @@ const formatRelative = (iso) => {
 	return `${Math.floor(hrs / 24)}d ago`;
 };
 
-const getNotificationTitle = (notif) => {
-	if (notif.type === "workspace_invite") {
-		return notif.payload?.workspaceName || "Workspace invitation";
-	}
-	return notif.payload?.taskTitle || "";
+const getNotificationTitle = (n) => {
+	if (n.type === "workspace_invite") return n.payload?.workspaceName || "Workspace invitation";
+	return n.payload?.taskTitle || "";
 };
 
-const getNotificationDescription = (notif) => {
-	if (notif.type === "workspace_invite") {
-		const inviterName = notif.payload?.inviterName || "Someone";
-		const workspaceName = notif.payload?.workspaceName || "a workspace";
-		const role = notif.payload?.role || "viewer";
-		return `${inviterName} invited you to join ${workspaceName} as ${role}.`;
+const getNotificationDescription = (n) => {
+	if (n.type === "workspace_invite") {
+		return `${n.payload?.inviterName || "Someone"} invited you to join ${n.payload?.workspaceName || "a workspace"} as ${n.payload?.role || "member"}.`;
 	}
-	if (notif.type === "task_assigned") {
-		return "A task was assigned to you.";
-	}
-	if (notif.type === "comment_mention") {
-		return "You were mentioned in a comment.";
-	}
-	if (notif.type === "task_due") {
-		return "A due date reminder was sent for this task.";
-	}
+	if (n.type === "task_assigned") return "A task was assigned to you.";
+	if (n.type === "comment_mention") return "You were mentioned in a comment.";
+	if (n.type === "task_due") return "A due date reminder for this task.";
 	return "";
 };
+
+function NotifRow({ notif, onRead, onDelete }) {
+	const meta = TYPE_META[notif.type] || TYPE_META.task_assigned;
+	const [hovered, setHovered] = useState(false);
+
+	return (
+		<div
+			onClick={() => onRead(notif)}
+			onMouseEnter={() => setHovered(true)}
+			onMouseLeave={() => setHovered(false)}
+			style={{
+				position: "relative",
+				display: "flex",
+				alignItems: "flex-start",
+				gap: 12,
+				padding: "14px 16px",
+				cursor: "pointer",
+				background: notif.isRead ? "transparent" : "rgba(108,99,255,0.05)",
+				borderBottom: "1px solid var(--border)",
+				transition: "background 0.15s",
+			}}
+		>
+			{/* Unread dot */}
+			{!notif.isRead && (
+				<div style={{ position: "absolute", left: 0, top: "50%", transform: "translateY(-50%)", width: 3, height: 28, background: "var(--accent)", borderRadius: "0 2px 2px 0" }} />
+			)}
+
+			{/* Icon */}
+			<div style={{ width: 36, height: 36, borderRadius: "var(--radius-md)", background: meta.bgColor, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0, color: meta.accentColor }}>
+				{meta.icon}
+			</div>
+
+			{/* Content */}
+			<div style={{ flex: 1, minWidth: 0 }}>
+				<div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+					<span style={{ fontSize: 11, fontWeight: 600, color: meta.accentColor, textTransform: "uppercase", letterSpacing: "0.06em" }}>{meta.label}</span>
+					{!notif.isRead && <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)", flexShrink: 0 }} />}
+				</div>
+				{getNotificationTitle(notif) && (
+					<p style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)", margin: "0 0 2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+						{getNotificationTitle(notif)}
+					</p>
+				)}
+				<p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0, lineHeight: 1.4 }}>{getNotificationDescription(notif)}</p>
+				{notif.type === "workspace_invite" && notif.payload?.inviteToken && (
+					<button
+						type="button"
+						className="btn btn-sm"
+						onClick={(e) => { e.stopPropagation(); onRead(notif); }}
+						style={{ marginTop: 8, background: "var(--success-muted)", color: "var(--success)", border: "1px solid rgba(52,211,153,0.3)" }}
+					>
+						Review invite →
+					</button>
+				)}
+				<span style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, display: "block" }}>{formatRelative(notif.createdAt)}</span>
+			</div>
+
+			{/* Delete */}
+			{hovered && (
+				<button
+					type="button"
+					onClick={(e) => { e.stopPropagation(); onDelete(notif._id); }}
+					style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: "4px 6px", borderRadius: "var(--radius-sm)", fontSize: 14, flexShrink: 0 }}
+					aria-label="Delete"
+					title="Delete notification"
+				>
+					✕
+				</button>
+			)}
+		</div>
+	);
+}
 
 export default function NotificationsPage() {
 	const [notifications, setNotifications] = useState([]);
 	const [unreadCount, setUnreadCount] = useState(0);
 	const [status, setStatus] = useState("loading");
 	const [markingAll, setMarkingAll] = useState(false);
+	const [filter, setFilter] = useState("all"); // "all" | "unread"
 	const navigate = useNavigate();
 
 	useEffect(() => {
-		let isActive = true;
-		const load = async () => {
-			try {
-				const { data } = await api.get("/notifications?limit=50");
-				if (!isActive) return;
+		let active = true;
+		api
+			.get("/notifications?limit=50")
+			.then(({ data }) => {
+				if (!active) return;
 				setNotifications(data.notifications);
 				setUnreadCount(data.unreadCount);
 				setStatus("ready");
-			} catch {
-				if (isActive) setStatus("error");
-			}
-		};
-		load();
-		return () => {
-			isActive = false;
-		};
+			})
+			.catch(() => { if (active) setStatus("error"); });
+		return () => { active = false; };
 	}, []);
 
 	const markRead = async (notif) => {
@@ -109,18 +134,14 @@ export default function NotificationsPage() {
 				await api.patch(`/notifications/${notif._id}/read`);
 				setNotifications((prev) => prev.map((n) => (n._id === notif._id ? { ...n, isRead: true } : n)));
 				setUnreadCount((c) => Math.max(0, c - 1));
-			} catch {
-				// ignore
-			}
+			} catch {/* ignore */}
 		}
 		const { workspaceId, boardId, inviteToken } = notif.payload || {};
 		if (notif.type === "workspace_invite" && inviteToken) {
 			navigate(`/invite/accept?token=${encodeURIComponent(inviteToken)}`);
 			return;
 		}
-		if (workspaceId && boardId) {
-			navigate(`/app/workspaces/${workspaceId}/boards/${boardId}`);
-		}
+		if (workspaceId && boardId) navigate(`/app/workspaces/${workspaceId}/boards/${boardId}`);
 	};
 
 	const markAllRead = async () => {
@@ -129,128 +150,95 @@ export default function NotificationsPage() {
 			await api.patch("/notifications/read-all");
 			setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
 			setUnreadCount(0);
-		} catch {
-			// ignore
-		} finally {
-			setMarkingAll(false);
-		}
+		} catch {/* ignore */}
+		finally { setMarkingAll(false); }
 	};
 
-	const deleteNotif = async (e, notifId) => {
-		e.stopPropagation();
+	const deleteNotif = async (notifId) => {
 		try {
 			await api.delete(`/notifications/${notifId}`);
-			setNotifications((prev) => prev.filter((n) => n._id !== notifId));
-		} catch {
-			// ignore
-		}
+			setNotifications((prev) => {
+				const n = prev.find((x) => x._id === notifId);
+				if (n && !n.isRead) setUnreadCount((c) => Math.max(0, c - 1));
+				return prev.filter((x) => x._id !== notifId);
+			});
+		} catch {/* ignore */}
 	};
 
+	const filtered = filter === "unread" ? notifications.filter((n) => !n.isRead) : notifications;
+
 	return (
-		<section className="rounded-2xl border border-ghost-white-200 bg-white/90 p-6 shadow-sm">
-			<div className="flex items-center justify-between gap-4 mb-6">
+		<div className="fade-in" style={{ maxWidth: 660, margin: "0 auto" }}>
+			{/* Header */}
+			<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, gap: 12, flexWrap: "wrap" }}>
 				<div>
-					<h2 className="text-2xl font-semibold text-jet-black-900 font-display">Notifications</h2>
+					<h1 style={{ fontSize: 20, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>Notifications</h1>
 					{unreadCount > 0 && (
-						<p className="mt-1 text-sm text-jet-black-500">
-							You have <span className="font-semibold text-space-indigo-600">{unreadCount} unread</span> notification{unreadCount !== 1 ? "s" : ""}
+						<p style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 4 }}>
+							<span style={{ color: "var(--accent)", fontWeight: 500 }}>{unreadCount} unread</span>
 						</p>
 					)}
 				</div>
 				{unreadCount > 0 && (
-					<button
-						type="button"
-						onClick={markAllRead}
-						disabled={markingAll}
-						className="rounded-lg border border-ghost-white-200 px-4 py-2 text-xs font-semibold text-jet-black-700 transition hover:bg-ghost-white-100 disabled:opacity-50"
-					>
-						{markingAll ? "Marking..." : "Mark all as read"}
+					<button type="button" onClick={markAllRead} disabled={markingAll} className="btn btn-ghost btn-sm">
+						{markingAll ? "Marking..." : "✓ Mark all read"}
 					</button>
 				)}
 			</div>
 
-			{status === "loading" && <p className="text-sm text-jet-black-400 text-center py-12">Loading notifications...</p>}
-			{status === "error" && <p className="text-sm text-red-500 text-center py-12">Failed to load notifications.</p>}
+			{/* Filter tabs */}
+			<div style={{ display: "flex", gap: 2, background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", padding: 4, marginBottom: 16, width: "fit-content" }}>
+				{["all", "unread"].map((f) => (
+					<button
+						key={f}
+						type="button"
+						onClick={() => setFilter(f)}
+						style={{
+							background: filter === f ? "var(--bg-surface-3)" : "none",
+							border: "none",
+							cursor: "pointer",
+							padding: "5px 14px",
+							borderRadius: "var(--radius-sm)",
+							fontSize: 13,
+							fontWeight: 500,
+							color: filter === f ? "var(--text-primary)" : "var(--text-secondary)",
+							transition: "all 0.15s",
+							textTransform: "capitalize",
+						}}
+					>
+						{f} {f === "unread" && unreadCount > 0 && <span style={{ background: "var(--accent)", color: "#fff", fontSize: 10, padding: "1px 5px", borderRadius: "var(--radius-full)", marginLeft: 4 }}>{unreadCount}</span>}
+					</button>
+				))}
+			</div>
 
-			{status === "ready" && notifications.length === 0 && (
-				<div className="flex flex-col items-center py-16 gap-3">
-					<div className="flex h-14 w-14 items-center justify-center rounded-full bg-ghost-white-100">
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-7 w-7 text-jet-black-400">
-							<path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
-						</svg>
+			{/* Card */}
+			<div className="card" style={{ padding: 0, overflow: "hidden" }}>
+				{status === "loading" && (
+					<div style={{ padding: "32px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
+						{[1, 2, 3].map((i) => <div key={i} className="skeleton" style={{ height: 70, borderRadius: "var(--radius-md)" }} />)}
 					</div>
-					<p className="text-sm text-jet-black-500">You&apos;re all caught up! No notifications yet.</p>
-				</div>
-			)}
+				)}
 
-			{status === "ready" && notifications.length > 0 && (
-				<ul className="space-y-2">
-					{notifications.map((notif) => {
-						const meta = TYPE_META[notif.type] || TYPE_META.task_assigned;
-						return (
-							<li
-								key={notif._id}
-								onClick={() => markRead(notif)}
-								className={`group relative flex cursor-pointer items-start gap-3 rounded-xl border px-4 py-3.5 transition hover:shadow-sm ${
-									notif.isRead
-										? "border-ghost-white-200 bg-white"
-										: "border-space-indigo-100 bg-space-indigo-50/30"
-								}`}
-							>
-								{/* Type icon */}
-								<div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${meta.color}`}>
-									{meta.icon}
-								</div>
+				{status === "error" && (
+					<div style={{ padding: 24, textAlign: "center", color: "var(--danger)", fontSize: 14 }}>Failed to load notifications</div>
+				)}
 
-								{/* Content */}
-								<div className="flex-1 min-w-0">
-									<div className="flex items-center gap-2">
-										<span className="text-xs font-semibold text-jet-black-500 uppercase tracking-wide">{meta.label}</span>
-										{!notif.isRead && (
-											<span className="h-2 w-2 rounded-full bg-space-indigo-500 shrink-0" />
-										)}
-									</div>
-									{getNotificationTitle(notif) && (
-										<p className="mt-0.5 text-sm font-medium text-jet-black-900 truncate">
-											{getNotificationTitle(notif)}
-										</p>
-									)}
-									{getNotificationDescription(notif) && (
-										<p className="mt-1 text-xs text-jet-black-500">
-											{getNotificationDescription(notif)}
-										</p>
-									)}
-									<p className="mt-0.5 text-xs text-jet-black-400">{formatRelative(notif.createdAt)}</p>
-									{notif.type === "workspace_invite" && notif.payload?.inviteToken && (
-										<button
-											type="button"
-											onClick={(e) => {
-												e.stopPropagation();
-												markRead(notif);
-											}}
-											className="mt-3 inline-flex rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-600"
-										>
-											Review invite
-										</button>
-									)}
-								</div>
+				{status === "ready" && filtered.length === 0 && (
+					<div style={{ padding: "64px 24px", textAlign: "center" }}>
+						<div style={{ fontSize: 40, marginBottom: 12 }}>🔔</div>
+						<p style={{ fontSize: 15, fontWeight: 500, color: "var(--text-primary)", marginBottom: 6 }}>
+							{filter === "unread" ? "No unread notifications" : "All caught up!"}
+						</p>
+						<p style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+							{filter === "unread" ? "You've read everything." : "No notifications yet."}
+						</p>
+					</div>
+				)}
 
-								{/* Delete button */}
-								<button
-									type="button"
-									onClick={(e) => deleteNotif(e, notif._id)}
-									className="absolute right-3 top-3 hidden rounded-lg p-1.5 text-jet-black-400 transition hover:bg-ghost-white-200 hover:text-jet-black-700 group-hover:flex"
-									aria-label="Delete notification"
-								>
-									<svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
-										<path d="M5.28 4.22a.75.75 0 00-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 101.06 1.06L8 9.06l2.72 2.72a.75.75 0 101.06-1.06L9.06 8l2.72-2.72a.75.75 0 00-1.06-1.06L8 6.94 5.28 4.22z" />
-									</svg>
-								</button>
-							</li>
-						);
-					})}
-				</ul>
-			)}
-		</section>
+				{status === "ready" && filtered.map((notif) => (
+					<NotifRow key={notif._id} notif={notif} onRead={markRead} onDelete={deleteNotif} />
+				))}
+			</div>
+		</div>
 	);
 }

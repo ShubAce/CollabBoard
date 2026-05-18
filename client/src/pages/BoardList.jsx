@@ -2,6 +2,16 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import api from "../api/axios";
 
+function SkeletonCard() {
+	return (
+		<div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: 20, display: "flex", flexDirection: "column", gap: 12 }}>
+			<div className="skeleton" style={{ height: 22, width: "50%" }} />
+			<div className="skeleton" style={{ height: 14, width: "30%" }} />
+			<div className="skeleton" style={{ height: 36, marginTop: 8 }} />
+		</div>
+	);
+}
+
 export default function BoardList() {
 	const { workspaceId } = useParams();
 	const [boards, setBoards] = useState([]);
@@ -10,17 +20,18 @@ export default function BoardList() {
 	const [status, setStatus] = useState("loading");
 	const [error, setError] = useState("");
 	const [isSubmitting, setIsSubmitting] = useState(false);
+	const [showForm, setShowForm] = useState(false);
 
 	const loadBoards = async () => {
 		setStatus("loading");
 		setError("");
 		try {
-			const [workspaceRes, boardsRes] = await Promise.all([
+			const [wsRes, bRes] = await Promise.all([
 				api.get(`/workspaces/${workspaceId}`),
 				api.get(`/workspaces/${workspaceId}/boards`),
 			]);
-			setWorkspaceName(workspaceRes.data?.name || "");
-			setBoards(boardsRes.data);
+			setWorkspaceName(wsRes.data?.name || "");
+			setBoards(bRes.data);
 			setStatus("ready");
 		} catch (err) {
 			setError(err.response?.data?.message || "Failed to load boards");
@@ -29,19 +40,18 @@ export default function BoardList() {
 	};
 
 	useEffect(() => {
-		if (workspaceId) {
-			loadBoards();
-		}
+		if (workspaceId) loadBoards();
 	}, [workspaceId]);
 
-	const handleCreate = async (event) => {
-		event.preventDefault();
+	const handleCreate = async (e) => {
+		e.preventDefault();
 		if (!newBoard.trim()) return;
 		setIsSubmitting(true);
 		try {
 			const { data } = await api.post(`/workspaces/${workspaceId}/boards`, { name: newBoard.trim() });
 			setNewBoard("");
 			setBoards((prev) => [data, ...prev]);
+			setShowForm(false);
 		} catch (err) {
 			setError(err.response?.data?.message || "Failed to create board");
 		} finally {
@@ -49,69 +59,110 @@ export default function BoardList() {
 		}
 	};
 
+	const COLUMN_COLORS = ["#8B8FA8", "#60A5FA", "#A78BFA", "#34D399"];
+
 	return (
-		<section className="rounded-2xl border border-ghost-white-200 bg-white/90 p-6 shadow-sm">
-			<div className="flex flex-wrap items-center justify-between gap-4">
+		<div className="fade-in">
+			{/* Header */}
+			<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
 				<div>
-					<h2 className="text-2xl font-semibold text-jet-black-900 font-display">{workspaceName ? `${workspaceName} boards` : "Boards"}</h2>
-					<p className="mt-1 text-sm text-jet-black-500">Create and manage boards for this workspace.</p>
+					<div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-secondary)", marginBottom: 6 }}>
+						<Link to={`/app/workspaces/${workspaceId}`} style={{ color: "var(--text-secondary)", textDecoration: "none" }}>
+							{workspaceName || "Workspace"}
+						</Link>
+						<span>/</span>
+						<span style={{ color: "var(--text-primary)", fontWeight: 500 }}>Boards</span>
+					</div>
+					<h1 style={{ fontSize: 20, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
+						{workspaceName ? `${workspaceName} — Boards` : "Boards"}
+					</h1>
+					<p style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 4 }}>
+						{status === "ready" ? `${boards.length} board${boards.length !== 1 ? "s" : ""}` : ""}
+					</p>
 				</div>
-				<Link
-					to={`/app/workspaces/${workspaceId}`}
-					className="inline-flex items-center justify-center rounded-xl bg-space-indigo-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-space-indigo-600"
-				>
-					Workspace overview
-				</Link>
+				<button type="button" onClick={() => setShowForm((v) => !v)} className="btn btn-primary" style={{ fontSize: 13 }}>
+					{showForm ? "Cancel" : "+ New Board"}
+				</button>
 			</div>
 
-			<form
-				className="mt-6 flex flex-wrap gap-3"
-				onSubmit={handleCreate}
-			>
-				<input
-					value={newBoard}
-					onChange={(event) => setNewBoard(event.target.value)}
-					placeholder="Board name"
-					required
-					className="min-w-[220px] flex-1 rounded-xl border border-ghost-white-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-space-indigo-400/30"
-				/>
-				<button
-					type="submit"
-					disabled={isSubmitting}
-					className="rounded-xl bg-space-indigo-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-space-indigo-600 disabled:opacity-60"
-				>
-					{isSubmitting ? "Creating..." : "Create board"}
-				</button>
-			</form>
+			{/* Inline create form */}
+			{showForm && (
+				<div className="card fade-in" style={{ padding: 20, marginBottom: 20 }}>
+					<h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 14px" }}>Create new board</h3>
+					<form onSubmit={handleCreate} style={{ display: "flex", gap: 10 }}>
+						<input
+							value={newBoard}
+							onChange={(e) => setNewBoard(e.target.value)}
+							placeholder="Sprint 4, Product Backlog..."
+							required
+							autoFocus
+							className="input"
+							style={{ flex: 1 }}
+						/>
+						<button type="submit" disabled={isSubmitting || !newBoard.trim()} className="btn btn-primary" style={{ fontSize: 13 }}>
+							{isSubmitting ? <><span className="spinner" style={{ width: 12, height: 12 }} /> Creating...</> : "Create"}
+						</button>
+					</form>
+					<p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 10 }}>
+						Starts with: To Do → In Progress → Review → Done
+					</p>
+				</div>
+			)}
 
-			{status === "loading" && <p className="mt-4 text-sm text-jet-black-500">Loading boards...</p>}
-			{error && <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+			{/* Error */}
+			{error && (
+				<div style={{ background: "var(--danger-muted)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: "var(--radius-md)", padding: "12px 16px", color: "var(--danger)", fontSize: 14, marginBottom: 16 }}>
+					{error}
+				</div>
+			)}
 
-			{status === "ready" && boards.length === 0 && <p className="mt-4 text-sm text-jet-black-500">No boards yet.</p>}
+			{/* Loading */}
+			{status === "loading" && (
+				<div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 16 }}>
+					{[1, 2, 3].map((i) => <SkeletonCard key={i} />)}
+				</div>
+			)}
 
+			{/* Empty */}
+			{status === "ready" && boards.length === 0 && !showForm && (
+				<div style={{ textAlign: "center", padding: "60px 24px", color: "var(--text-secondary)" }}>
+					<div style={{ fontSize: 48, marginBottom: 16 }}>📋</div>
+					<h2 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-primary)", marginBottom: 8 }}>No boards yet</h2>
+					<p style={{ fontSize: 14, marginBottom: 24 }}>Create your first board to start organizing tasks with Kanban.</p>
+					<button type="button" onClick={() => setShowForm(true)} className="btn btn-primary">+ Create board</button>
+				</div>
+			)}
+
+			{/* Grid */}
 			{boards.length > 0 && (
-				<div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+				<div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 16 }}>
 					{boards.map((board) => (
-						<div
-							key={board._id}
-							className="flex flex-col justify-between gap-4 rounded-xl border border-ghost-white-200 bg-ghost-white-100/70 p-4"
-						>
-							<div>
-								<h3 className="text-lg font-semibold text-jet-black-900">{board.name}</h3>
-								<p className="mt-1 text-sm text-jet-black-500">{board.columns?.length || 0} columns</p>
+						<Link key={board._id} to={`/app/workspaces/${workspaceId}/boards/${board._id}`} style={{ textDecoration: "none" }}>
+							<div
+								className="card"
+								style={{ padding: 18, cursor: "pointer", transition: "transform 0.2s, box-shadow 0.2s", display: "flex", flexDirection: "column", gap: 12 }}
+								onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-3px)"; e.currentTarget.style.boxShadow = "0 8px 32px rgba(0,0,0,0.5)"; }}
+								onMouseLeave={(e) => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = ""; }}
+							>
+								<div style={{ fontSize: 22 }}>📋</div>
+								<div>
+									<p style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{board.name}</p>
+									<p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>{board.columns?.length || 4} columns</p>
+								</div>
+
+								{/* Column progress bars */}
+								<div style={{ display: "flex", gap: 4, height: 4 }}>
+									{COLUMN_COLORS.map((c, i) => (
+										<div key={i} style={{ flex: 1, height: 4, background: c, borderRadius: 2, opacity: 0.6 }} />
+									))}
+								</div>
+
+								<p style={{ fontSize: 12, color: "var(--accent)", margin: 0, fontWeight: 500 }}>Open board →</p>
 							</div>
-							<div className="flex flex-wrap items-center gap-3 text-sm">
-								<Link
-									to={`/app/workspaces/${workspaceId}/boards/${board._id}`}
-									className="font-semibold text-jet-black-700 hover:text-jet-black-900"
-								>
-									Open board
-								</Link>
-							</div>
-						</div>
+						</Link>
 					))}
 				</div>
 			)}
-		</section>
+		</div>
 	);
 }

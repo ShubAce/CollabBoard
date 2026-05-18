@@ -4,11 +4,18 @@ import api from "../api/axios";
 import { getSocket } from "../socket";
 import useAuthStore from "../store/authStore";
 
+const WS_COLORS = ["#6C63FF", "#60A5FA", "#34D399", "#F87171", "#FBBF24", "#A78BFA", "#FB923C", "#F472B6"];
+function getInitials(name = "") { return name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2); }
+function getColor(name = "") {
+	let h = 0;
+	for (const c of name) h = c.charCodeAt(0) + ((h << 5) - h);
+	return WS_COLORS[Math.abs(h) % WS_COLORS.length];
+}
+
 const formatTime = (iso) => {
 	const d = new Date(iso);
 	return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 };
-
 const formatDate = (iso) => {
 	const d = new Date(iso);
 	const today = new Date();
@@ -18,6 +25,20 @@ const formatDate = (iso) => {
 	if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
 	return d.toLocaleDateString([], { month: "short", day: "numeric" });
 };
+
+function TypingDots({ names }) {
+	if (!names.length) return null;
+	return (
+		<div style={{ padding: "4px 16px 8px", display: "flex", alignItems: "center", gap: 8 }}>
+			<div className="typing-dots">
+				<span /><span /><span />
+			</div>
+			<span style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
+				{names.join(", ")} {names.length === 1 ? "is" : "are"} typing
+			</span>
+		</div>
+	);
+}
 
 export default function ChatPage() {
 	const { workspaceId } = useParams();
@@ -35,30 +56,24 @@ export default function ChatPage() {
 	const messagesEndRef = useRef(null);
 	const typingTimers = useRef({});
 	const isFirstLoad = useRef(true);
+	const inputRef = useRef(null);
 
-	// Load initial messages
 	useEffect(() => {
 		if (!workspaceId) return;
-		let isActive = true;
-		const load = async () => {
-			try {
-				const { data } = await api.get(`/workspaces/${workspaceId}/messages?limit=50`);
-				if (!isActive) return;
+		let active = true;
+		api
+			.get(`/workspaces/${workspaceId}/messages?limit=50`)
+			.then(({ data }) => {
+				if (!active) return;
 				setMessages(data.messages);
 				setHasMore(data.hasMore);
 				setNextCursor(data.nextCursor);
 				setStatus("ready");
-			} catch {
-				if (isActive) setStatus("error");
-			}
-		};
-		load();
-		return () => {
-			isActive = false;
-		};
+			})
+			.catch(() => { if (active) setStatus("error"); });
+		return () => { active = false; };
 	}, [workspaceId]);
 
-	// Auto-scroll to bottom on new message (first load)
 	useEffect(() => {
 		if (status === "ready" && isFirstLoad.current) {
 			messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
@@ -66,7 +81,6 @@ export default function ChatPage() {
 		}
 	}, [status]);
 
-	// Socket: real-time message + typing
 	useEffect(() => {
 		if (!workspaceId || !accessToken) return;
 		const socket = getSocket(accessToken);
@@ -76,36 +90,25 @@ export default function ChatPage() {
 
 		const handleMessage = ({ message }) => {
 			setMessages((prev) => [...prev, message]);
-			// Scroll to bottom if already near it
 			setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
 		};
 
 		const handleTyping = ({ userId, name, isTyping }) => {
 			if (userId === currentUser?._id) return;
 			setTypingUsers((prev) => {
-				if (!isTyping) {
-					const next = { ...prev };
-					delete next[userId];
-					return next;
-				}
+				if (!isTyping) { const next = { ...prev }; delete next[userId]; return next; }
 				return { ...prev, [userId]: name };
 			});
-			// Auto-clear after 3s of silence
 			clearTimeout(typingTimers.current[userId]);
 			if (isTyping) {
 				typingTimers.current[userId] = setTimeout(() => {
-					setTypingUsers((prev) => {
-						const next = { ...prev };
-						delete next[userId];
-						return next;
-					});
+					setTypingUsers((prev) => { const next = { ...prev }; delete next[userId]; return next; });
 				}, 3000);
 			}
 		};
 
 		socket.on("chat:message", handleMessage);
 		socket.on("chat:typing", handleTyping);
-
 		return () => {
 			socket.off("chat:message", handleMessage);
 			socket.off("chat:typing", handleTyping);
@@ -119,6 +122,7 @@ export default function ChatPage() {
 		if (!socket) return;
 		socket.emit("chat:send", { workspaceId, content });
 		setInput("");
+		inputRef.current?.focus();
 	};
 
 	const handleInputChange = (e) => {
@@ -133,10 +137,7 @@ export default function ChatPage() {
 	};
 
 	const handleKeyDown = (e) => {
-		if (e.key === "Enter" && !e.shiftKey) {
-			e.preventDefault();
-			handleSend();
-		}
+		if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
 	};
 
 	const loadMore = async () => {
@@ -147,16 +148,12 @@ export default function ChatPage() {
 			setMessages((prev) => [...data.messages, ...prev]);
 			setHasMore(data.hasMore);
 			setNextCursor(data.nextCursor);
-		} catch {
-			// ignore
-		} finally {
-			setLoadingMore(false);
-		}
+		} catch {/* ignore */}
+		finally { setLoadingMore(false); }
 	};
 
 	const typingNames = Object.values(typingUsers);
 
-	// Group messages by date
 	const grouped = messages.reduce((acc, msg) => {
 		const dateLabel = formatDate(msg.createdAt);
 		if (!acc.length || acc[acc.length - 1].date !== dateLabel) {
@@ -168,89 +165,104 @@ export default function ChatPage() {
 	}, []);
 
 	return (
-		<section className="flex h-[calc(100vh-120px)] flex-col rounded-2xl border border-ghost-white-200 bg-white/90 shadow-sm overflow-hidden">
+		<div
+			className="fade-in"
+			style={{
+				display: "flex",
+				flexDirection: "column",
+				height: "calc(100vh - 56px - 48px)", // topbar + content padding
+				background: "var(--bg-surface)",
+				border: "1px solid var(--border)",
+				borderRadius: "var(--radius-lg)",
+				overflow: "hidden",
+			}}
+		>
 			{/* Header */}
-			<div className="flex items-center justify-between border-b border-ghost-white-200 px-6 py-4">
+			<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
 				<div>
-					<h2 className="text-lg font-semibold text-jet-black-900 font-display">Workspace Chat</h2>
-					<p className="text-xs text-jet-black-500 mt-0.5">Messages are visible to all workspace members</p>
+					<h1 style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>💬 Workspace Chat</h1>
+					<p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>All messages visible to workspace members</p>
 				</div>
-				<span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-					<span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-					Live
-				</span>
+				<div style={{ display: "flex", alignItems: "center", gap: 6, background: "var(--success-muted)", border: "1px solid rgba(52,211,153,0.3)", borderRadius: "var(--radius-full)", padding: "3px 10px" }}>
+					<div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--success)" }} />
+					<span style={{ fontSize: 12, fontWeight: 600, color: "var(--success)" }}>Live</span>
+				</div>
 			</div>
 
-			{/* Messages */}
-			<div className="flex-1 overflow-y-auto px-6 py-4 space-y-1">
+			{/* Messages area */}
+			<div style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }}>
 				{status === "loading" && (
-					<p className="text-sm text-jet-black-400 text-center pt-8">Loading messages...</p>
+					<div style={{ display: "flex", flexDirection: "column", gap: 16, paddingTop: 16 }}>
+						{[1, 2, 3].map((i) => (
+							<div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+								<div className="skeleton" style={{ width: 32, height: 32, borderRadius: "50%", flexShrink: 0 }} />
+								<div className="skeleton" style={{ height: 44, width: `${120 + i * 60}px`, borderRadius: "var(--radius-lg)" }} />
+							</div>
+						))}
+					</div>
 				)}
 				{status === "error" && (
-					<p className="text-sm text-red-500 text-center pt-8">Failed to load messages.</p>
+					<p style={{ textAlign: "center", color: "var(--danger)", fontSize: 14, paddingTop: 32 }}>Failed to load messages.</p>
 				)}
 				{status === "ready" && (
 					<>
 						{hasMore && (
-							<div className="flex justify-center mb-4">
-								<button
-									type="button"
-									onClick={loadMore}
-									disabled={loadingMore}
-									className="rounded-lg border border-ghost-white-200 px-4 py-1.5 text-xs font-semibold text-jet-black-600 hover:bg-ghost-white-100 transition disabled:opacity-50"
-								>
-									{loadingMore ? "Loading..." : "Load older messages"}
+							<div style={{ textAlign: "center", marginBottom: 16 }}>
+								<button type="button" onClick={loadMore} disabled={loadingMore} className="btn btn-ghost btn-sm" style={{ fontSize: 12 }}>
+									{loadingMore ? <><span className="spinner" style={{ width: 11, height: 11 }} /> Loading...</> : "↑ Load older messages"}
 								</button>
 							</div>
 						)}
 						{messages.length === 0 && (
-							<p className="text-sm text-jet-black-400 text-center pt-16">No messages yet. Say hello! 👋</p>
+							<div style={{ textAlign: "center", padding: "64px 24px", color: "var(--text-secondary)" }}>
+								<div style={{ fontSize: 36, marginBottom: 12 }}>👋</div>
+								<p style={{ fontSize: 15, fontWeight: 500, color: "var(--text-primary)", marginBottom: 6 }}>No messages yet</p>
+								<p style={{ fontSize: 13 }}>Be the first to say hello!</p>
+							</div>
 						)}
 						{grouped.map((group) => (
 							<div key={group.date}>
-								<div className="flex items-center gap-3 my-4">
-									<div className="flex-1 h-px bg-ghost-white-200" />
-									<span className="text-[11px] font-semibold text-jet-black-400">{group.date}</span>
-									<div className="flex-1 h-px bg-ghost-white-200" />
+								{/* Date separator */}
+								<div style={{ display: "flex", alignItems: "center", gap: 12, margin: "16px 0 12px" }}>
+									<div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+									<span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", background: "var(--bg-surface)", padding: "0 8px" }}>{group.date}</span>
+									<div style={{ flex: 1, height: 1, background: "var(--border)" }} />
 								</div>
+
 								{group.items.map((msg) => {
 									const isOwn = msg.sender?._id === currentUser?._id;
+									const avatarColor = getColor(msg.sender?.name || "");
 									return (
 										<div
 											key={msg._id}
-											className={`flex items-end gap-2.5 mb-3 ${isOwn ? "flex-row-reverse" : ""}`}
+											style={{ display: "flex", alignItems: "flex-end", gap: 8, marginBottom: 10, flexDirection: isOwn ? "row-reverse" : "row" }}
 										>
 											{/* Avatar */}
-											<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ghost-white-200 text-xs font-semibold text-jet-black-700 overflow-hidden">
+											<div style={{ width: 30, height: 30, borderRadius: "50%", background: msg.sender?.avatar ? "transparent" : avatarColor, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#fff", overflow: "hidden" }}>
 												{msg.sender?.avatar ? (
-													<img
-														src={msg.sender.avatar}
-														alt={msg.sender.name}
-														className="h-full w-full object-cover"
-													/>
-												) : (
-													(msg.sender?.name || "?").slice(0, 1).toUpperCase()
-												)}
+													<img src={msg.sender.avatar} alt={msg.sender.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+												) : getInitials(msg.sender?.name || "?")}
 											</div>
+
 											{/* Bubble */}
-											<div className={`max-w-[70%] ${isOwn ? "items-end" : "items-start"} flex flex-col`}>
+											<div style={{ maxWidth: "70%", display: "flex", flexDirection: "column", alignItems: isOwn ? "flex-end" : "flex-start" }}>
 												{!isOwn && (
-													<span className="mb-0.5 text-[11px] font-semibold text-jet-black-500">
-														{msg.sender?.name}
+													<span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 3 }}>
+														{msg.sender?.name || "Unknown"}
 													</span>
 												)}
-												<div
-													className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
-														isOwn
-															? "rounded-br-sm bg-space-indigo-500 text-white"
-															: "rounded-bl-sm bg-ghost-white-100 text-jet-black-900"
-													}`}
-												>
+												<div style={{
+													background: isOwn ? "var(--accent)" : "var(--bg-surface-2)",
+													color: isOwn ? "#fff" : "var(--text-primary)",
+													padding: "9px 14px",
+													borderRadius: isOwn ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
+													fontSize: 14,
+													lineHeight: 1.5,
+													wordBreak: "break-word",
+												}}>
 													{msg.content}
 												</div>
-												<span className="mt-0.5 text-[10px] text-jet-black-400">
-													{formatTime(msg.createdAt)}
-												</span>
+												<span style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>{formatTime(msg.createdAt)}</span>
 											</div>
 										</div>
 									);
@@ -263,45 +275,62 @@ export default function ChatPage() {
 			</div>
 
 			{/* Typing indicator */}
-			<div className="min-h-[22px] px-6">
-				{typingNames.length > 0 && (
-					<p className="text-xs text-jet-black-400 italic">
-						{typingNames.join(", ")} {typingNames.length === 1 ? "is" : "are"} typing
-						<span className="ml-1 inline-flex gap-0.5">
-							<span className="animate-bounce" style={{ animationDelay: "0ms" }}>.</span>
-							<span className="animate-bounce" style={{ animationDelay: "150ms" }}>.</span>
-							<span className="animate-bounce" style={{ animationDelay: "300ms" }}>.</span>
-						</span>
-					</p>
-				)}
-			</div>
+			<TypingDots names={typingNames} />
 
 			{/* Input */}
-			<div className="border-t border-ghost-white-200 px-4 py-3">
-				<div className="flex items-end gap-3 rounded-xl border border-ghost-white-200 bg-ghost-white-50 px-4 py-2.5 focus-within:border-space-indigo-400 transition">
+			<div style={{ flexShrink: 0, padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
+				<div style={{ display: "flex", alignItems: "flex-end", gap: 10, background: "var(--bg-surface-2)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: "8px 8px 8px 14px", transition: "border-color 0.15s" }}
+					onFocusCapture={(e) => e.currentTarget.style.borderColor = "var(--border-focus)"}
+					onBlurCapture={(e) => e.currentTarget.style.borderColor = "var(--border)"}
+				>
 					<textarea
+						ref={inputRef}
 						id="chat-input"
 						value={input}
 						onChange={handleInputChange}
 						onKeyDown={handleKeyDown}
 						rows={1}
 						placeholder="Type a message... (Enter to send)"
-						className="flex-1 resize-none bg-transparent text-sm text-jet-black-900 placeholder-jet-black-400 outline-none"
-						style={{ maxHeight: "120px" }}
+						style={{
+							flex: 1,
+							resize: "none",
+							background: "transparent",
+							border: "none",
+							outline: "none",
+							fontSize: 14,
+							color: "var(--text-primary)",
+							fontFamily: "inherit",
+							maxHeight: 120,
+							lineHeight: 1.5,
+							padding: 0,
+						}}
 					/>
 					<button
 						type="button"
 						onClick={handleSend}
 						disabled={!input.trim()}
-						className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-space-indigo-500 text-white transition hover:bg-space-indigo-600 disabled:opacity-40"
 						aria-label="Send message"
+						style={{
+							width: 34,
+							height: 34,
+							borderRadius: "var(--radius-md)",
+							background: input.trim() ? "var(--accent)" : "var(--bg-surface-3)",
+							border: "none",
+							cursor: input.trim() ? "pointer" : "not-allowed",
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "center",
+							color: "#fff",
+							fontSize: 16,
+							transition: "all 0.15s",
+							flexShrink: 0,
+						}}
 					>
-						<svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-							<path d="M3.105 2.289a.75.75 0 00-.826.95l1.903 6.89H10.5a.75.75 0 010 1.5H4.182l-1.903 6.89a.75.75 0 00.826.95 28.896 28.896 0 0015.293-7.154.75.75 0 000-1.115A28.897 28.897 0 003.105 2.289z" />
-						</svg>
+						↑
 					</button>
 				</div>
+				<p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6, textAlign: "right" }}>Enter to send · Shift+Enter for newline</p>
 			</div>
-		</section>
+		</div>
 	);
 }

@@ -1,121 +1,339 @@
-import { useEffect, useState } from "react";
-import { Link, Outlet, useMatch, useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, NavLink, Outlet, useMatch, useNavigate } from "react-router-dom";
 import api from "../api/axios";
 import { getSocket } from "../socket";
 import useAuthStore from "../store/authStore";
 
+function getInitials(name = "") {
+	return name
+		.split(" ")
+		.map((w) => w[0])
+		.join("")
+		.toUpperCase()
+		.slice(0, 2);
+}
+
+function getAvatarColor(name = "") {
+	const colors = ["#6C63FF", "#34D399", "#60A5FA", "#F87171", "#FBBF24", "#A78BFA", "#FB923C"];
+	let hash = 0;
+	for (const ch of name) hash = ch.charCodeAt(0) + ((hash << 5) - hash);
+	return colors[Math.abs(hash) % colors.length];
+}
+
+function Avatar({ user, size = "sm" }) {
+	const bg = getAvatarColor(user?.name || "");
+	const initials = getInitials(user?.name || "?");
+	return user?.avatar ? (
+		<img src={user.avatar} alt={user.name} className={`avatar avatar-${size}`} />
+	) : (
+		<div className={`avatar avatar-${size}`} style={{ background: bg }}>
+			{initials}
+		</div>
+	);
+}
+
 export default function AppShell() {
 	const navigate = useNavigate();
-	// Extract workspaceId if current route has one (for contextual Chat nav link)
 	const wsMatch = useMatch("/app/workspaces/:workspaceId/*");
 	const workspaceId = wsMatch?.params?.workspaceId || null;
-	const user = useAuthStore((state) => state.user);
-	const accessToken = useAuthStore((state) => state.accessToken);
-	const clearAuth = useAuthStore((state) => state.clearAuth);
+	const user = useAuthStore((s) => s.user);
+	const accessToken = useAuthStore((s) => s.accessToken);
+	const clearAuth = useAuthStore((s) => s.clearAuth);
 
 	const [unreadCount, setUnreadCount] = useState(0);
+	const [workspace, setWorkspace] = useState(null);
+	const [sidebarOpen, setSidebarOpen] = useState(false);
+	const [userMenuOpen, setUserMenuOpen] = useState(false);
+	const userMenuRef = useRef(null);
 
 	// Fetch initial unread count
 	useEffect(() => {
 		if (!accessToken) return;
-		let isActive = true;
-		api.get("/notifications?unreadOnly=true&limit=1")
-			.then(({ data }) => {
-				if (isActive) setUnreadCount(data.unreadCount || 0);
-			})
+		let active = true;
+		api
+			.get("/notifications?unreadOnly=true&limit=1")
+			.then(({ data }) => { if (active) setUnreadCount(data.unreadCount || 0); })
 			.catch(() => {});
-		return () => {
-			isActive = false;
-		};
+		return () => { active = false; };
 	}, [accessToken]);
 
-	// Socket: listen for new notifications
+	// Fetch current workspace info
+	useEffect(() => {
+		if (!workspaceId || !accessToken) return;
+		let active = true;
+		api
+			.get(`/workspaces/${workspaceId}`)
+			.then(({ data }) => { if (active) setWorkspace(data); })
+			.catch(() => {});
+		return () => { active = false; };
+	}, [workspaceId, accessToken]);
+
+	// Socket: new notifications
 	useEffect(() => {
 		if (!accessToken) return;
 		const socket = getSocket(accessToken);
 		if (!socket) return;
-
-		const handleNew = () => {
-			setUnreadCount((c) => c + 1);
-		};
-		socket.on("notification:new", handleNew);
-		return () => {
-			socket.off("notification:new", handleNew);
-		};
+		const handle = () => setUnreadCount((c) => c + 1);
+		socket.on("notification:new", handle);
+		return () => socket.off("notification:new", handle);
 	}, [accessToken]);
 
+	// Close user menu on outside click
+	useEffect(() => {
+		const handle = (e) => {
+			if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
+				setUserMenuOpen(false);
+			}
+		};
+		document.addEventListener("mousedown", handle);
+		return () => document.removeEventListener("mousedown", handle);
+	}, []);
+
 	const handleLogout = async () => {
-		try {
-			await api.post("/auth/logout");
-		} finally {
+		try { await api.post("/auth/logout"); } finally {
 			clearAuth();
 			navigate("/login");
 		}
 	};
 
+	const navLinks = workspaceId
+		? [
+				{ to: `/app/workspaces/${workspaceId}`, icon: "🏠", label: "Dashboard" },
+				{ to: `/app/workspaces/${workspaceId}/boards`, icon: "📋", label: "Boards" },
+				{ to: `/app/workspaces/${workspaceId}/chat`, icon: "💬", label: "Chat" },
+				{ to: `/app/workspaces/${workspaceId}/settings`, icon: "⚙", label: "Settings" },
+		  ]
+		: [];
+
+	const globalLinks = [
+		{ to: "/app/workspaces", icon: "🏢", label: "Workspaces" },
+		{ to: "/app/notifications", icon: "🔔", label: "Notifications", badge: unreadCount },
+		{ to: "/app/profile", icon: "👤", label: "Profile" },
+	];
+
 	return (
-		<div className="mx-auto w-full max-w-6xl px-6 py-8">
-			<header className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-ghost-white-200 bg-white/80 p-6 shadow-sm">
-				<div>
-					<h1 className="text-2xl font-semibold tracking-tight text-jet-black-900 font-display">CollabBoard</h1>
-					<p className="text-sm text-jet-black-500">{user ? `Signed in as ${user.name}` : "Signed in"}</p>
+		<div className="app-layout">
+			{/* ── SIDEBAR ── */}
+			<aside className="sidebar" style={{ display: sidebarOpen || window.innerWidth > 767 ? undefined : "none" }}>
+				{/* Logo */}
+				<Link
+					to="/app/workspaces"
+					style={{
+						display: "flex",
+						alignItems: "center",
+						gap: 10,
+						padding: "18px 16px",
+						textDecoration: "none",
+						borderBottom: `1px solid var(--border)`,
+					}}
+				>
+					<span style={{ fontSize: 20 }}>⬡</span>
+					<span style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)" }}>CollabBoard</span>
+				</Link>
+
+				{/* Workspace header */}
+				{workspace && (
+					<div style={{ padding: "12px 16px 8px", borderBottom: `1px solid var(--border)` }}>
+						<p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{workspace.name}</p>
+						<p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>{workspace.members?.length || 0} members</p>
+					</div>
+				)}
+
+				{/* Workspace nav links */}
+				{navLinks.length > 0 && (
+					<nav style={{ paddingTop: 8 }}>
+						{navLinks.map(({ to, icon, label }) => (
+							<NavLink
+								key={to}
+								to={to}
+								end={to === `/app/workspaces/${workspaceId}`}
+								className={({ isActive }) => `nav-item${isActive ? " active" : ""}`}
+							>
+								<span>{icon}</span>
+								<span>{label}</span>
+							</NavLink>
+						))}
+					</nav>
+				)}
+
+				<div className="divider" style={{ margin: "8px 0" }} />
+
+				{/* Global nav */}
+				<nav>
+					<div className="section-label">Navigation</div>
+					{globalLinks.map(({ to, icon, label, badge }) => (
+						<NavLink
+							key={to}
+							to={to}
+							className={({ isActive }) => `nav-item${isActive ? " active" : ""}`}
+						>
+							<span>{icon}</span>
+							<span style={{ flex: 1 }}>{label}</span>
+							{badge > 0 && (
+								<span
+									style={{
+										background: "var(--accent)",
+										color: "#fff",
+										fontSize: 11,
+										fontWeight: 600,
+										padding: "1px 6px",
+										borderRadius: "var(--radius-full)",
+									}}
+								>
+									{badge > 99 ? "99+" : badge}
+								</span>
+							)}
+						</NavLink>
+					))}
+				</nav>
+
+				{/* Footer: user */}
+				<div style={{ marginTop: "auto", borderTop: `1px solid var(--border)`, padding: 16 }}>
+					<div ref={userMenuRef} style={{ position: "relative" }}>
+						<button
+							type="button"
+							onClick={() => setUserMenuOpen((o) => !o)}
+							style={{
+								display: "flex",
+								alignItems: "center",
+								gap: 10,
+								width: "100%",
+								background: "none",
+								border: "none",
+								cursor: "pointer",
+								padding: 0,
+								textAlign: "left",
+							}}
+						>
+							<Avatar user={user} size="sm" />
+							<div style={{ minWidth: 0 }}>
+								<p style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+									{user?.name || "User"}
+								</p>
+								<p style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+									{user?.email || ""}
+								</p>
+							</div>
+						</button>
+
+						{userMenuOpen && (
+							<div
+								className="dropdown"
+								style={{ bottom: "calc(100% + 8px)", left: 0, right: 0 }}
+							>
+								<Link
+									to="/app/profile"
+									className="dropdown-item"
+									onClick={() => setUserMenuOpen(false)}
+								>
+									👤 Profile
+								</Link>
+								<div style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />
+								<button
+									type="button"
+									className="dropdown-item danger"
+									onClick={handleLogout}
+									style={{ width: "100%", textAlign: "left" }}
+								>
+									🚪 Log out
+								</button>
+							</div>
+						)}
+					</div>
 				</div>
-				<nav className="flex items-center gap-2 text-sm font-medium">
-					<Link
-						to="/app/workspaces"
-						className="rounded-xl border border-ghost-white-200 bg-ghost-white-100 px-3 py-2 text-jet-black-700 transition hover:bg-ghost-white-200"
+			</aside>
+
+			{/* ── MAIN AREA ── */}
+			<div className="main-area">
+				{/* Top Bar */}
+				<header className="topbar">
+					{/* Mobile hamburger */}
+					<button
+						type="button"
+						onClick={() => setSidebarOpen((o) => !o)}
+						style={{
+							background: "none",
+							border: "none",
+							color: "var(--text-secondary)",
+							cursor: "pointer",
+							fontSize: 20,
+							display: "none",
+							padding: 4,
+						}}
+						className="mobile-menu-btn"
 					>
-						Workspaces
-					</Link>
-					<Link
-						to="/app/profile"
-						className="rounded-xl border border-ghost-white-200 bg-ghost-white-100 px-3 py-2 text-jet-black-700 transition hover:bg-ghost-white-200"
-					>
-						Profile
-					</Link>
-					{workspaceId && (
-						<>
-							<Link
-								to={`/app/workspaces/${workspaceId}/chat`}
-								className="rounded-xl border border-ghost-white-200 bg-ghost-white-100 px-3 py-2 text-jet-black-700 transition hover:bg-ghost-white-200"
-							>
-								Chat
-							</Link>
-							<Link
-								to={`/app/workspaces/${workspaceId}/settings`}
-								className="rounded-xl border border-ghost-white-200 bg-ghost-white-100 px-3 py-2 text-jet-black-700 transition hover:bg-ghost-white-200"
-							>
-								Settings
-							</Link>
-						</>
-					)}
-					{/* Bell / Notifications */}
+						☰
+					</button>
+
+					{/* Breadcrumb */}
+					<div style={{ flex: 1, display: "flex", alignItems: "center", gap: 6, fontSize: 14, color: "var(--text-secondary)", overflow: "hidden" }}>
+						{workspace ? (
+							<>
+								<Link to="/app/workspaces" style={{ color: "var(--text-secondary)", textDecoration: "none" }}>
+									Workspaces
+								</Link>
+								<span>/</span>
+								<Link to={`/app/workspaces/${workspaceId}`} style={{ color: "var(--text-primary)", fontWeight: 500, textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+									{workspace.name}
+								</Link>
+							</>
+						) : (
+							<span style={{ color: "var(--text-primary)", fontWeight: 500 }}>CollabBoard</span>
+						)}
+					</div>
+
+					{/* Notification bell */}
 					<Link
 						to="/app/notifications"
-						className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-ghost-white-200 bg-ghost-white-100 text-jet-black-700 transition hover:bg-ghost-white-200"
 						aria-label="Notifications"
+						style={{
+							position: "relative",
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "center",
+							width: 36,
+							height: 36,
+							borderRadius: "var(--radius-md)",
+							background: "var(--bg-surface-2)",
+							border: "1px solid var(--border)",
+							color: "var(--text-secondary)",
+							textDecoration: "none",
+							fontSize: 16,
+							flexShrink: 0,
+						}}
 					>
-						<svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-							<path fillRule="evenodd" d="M10 2a6 6 0 00-6 6v2.172l-.707.707A1 1 0 004 12v1a1 1 0 001 1h10a1 1 0 001-1v-1a1 1 0 00-.293-.707L15 10.172V8a6 6 0 00-5-5.917V2a1 1 0 10-2 0v.083A6.001 6.001 0 0010 2zM8 16a2 2 0 104 0H8z" clipRule="evenodd" />
-						</svg>
+						🔔
 						{unreadCount > 0 && (
-							<span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-500 px-0.5 text-[10px] font-bold text-white leading-none">
+							<span
+								style={{
+									position: "absolute",
+									top: -4,
+									right: -4,
+									background: "var(--accent)",
+									color: "#fff",
+									fontSize: 10,
+									fontWeight: 700,
+									padding: "1px 5px",
+									borderRadius: "var(--radius-full)",
+									lineHeight: 1.4,
+								}}
+							>
 								{unreadCount > 99 ? "99+" : unreadCount}
 							</span>
 						)}
 					</Link>
-				</nav>
-				<button
-					type="button"
-					onClick={handleLogout}
-					className="rounded-xl border border-ghost-white-200 bg-white px-4 py-2 text-sm font-semibold text-jet-black-700 transition hover:bg-ghost-white-100"
-				>
-					Log out
-				</button>
-			</header>
-			<main className="mt-6 grid gap-6">
-				<Outlet />
-			</main>
+
+					{/* User avatar */}
+					<Link to="/app/profile" style={{ textDecoration: "none" }}>
+						<Avatar user={user} size="sm" />
+					</Link>
+				</header>
+
+				{/* Page content */}
+				<main className="content-area fade-in">
+					<Outlet />
+				</main>
+			</div>
 		</div>
 	);
 }

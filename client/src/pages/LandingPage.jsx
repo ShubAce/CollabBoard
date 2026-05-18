@@ -1,24 +1,330 @@
-import { Link } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import useAuthStore from "../store/authStore";
+
+const FEATURES = [
+	{
+		icon: "⚡",
+		title: "Real-time sync",
+		desc: "Changes appear instantly for every team member. No refreshing required.",
+	},
+	{
+		icon: "🎨",
+		title: "Live whiteboard",
+		desc: "Draw together, see each other's cursors move live across the canvas.",
+	},
+	{
+		icon: "💬",
+		title: "Team chat",
+		desc: "One chat room per workspace with @mentions and typing indicators.",
+	},
+];
+
+function FeatureCard({ icon, title, desc }) {
+	return (
+		<div
+			style={{
+				background: "var(--bg-surface)",
+				border: "1px solid var(--border)",
+				borderRadius: "var(--radius-lg)",
+				padding: "28px 24px",
+				display: "flex",
+				flexDirection: "column",
+				gap: 12,
+				flex: 1,
+				minWidth: 200,
+				boxShadow: "var(--shadow-card)",
+				transition: "transform 0.2s, box-shadow 0.2s",
+				cursor: "default",
+			}}
+			onMouseEnter={(e) => {
+				e.currentTarget.style.transform = "translateY(-4px)";
+				e.currentTarget.style.boxShadow = "0 8px 32px rgba(0,0,0,0.5)";
+			}}
+			onMouseLeave={(e) => {
+				e.currentTarget.style.transform = "translateY(0)";
+				e.currentTarget.style.boxShadow = "var(--shadow-card)";
+			}}
+		>
+			<span style={{ fontSize: 32 }}>{icon}</span>
+			<p style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>{title}</p>
+			<p style={{ fontSize: 14, color: "var(--text-secondary)", margin: 0, lineHeight: 1.6 }}>{desc}</p>
+		</div>
+	);
+}
 
 export default function LandingPage() {
+	const navigate = useNavigate();
+	const accessToken = useAuthStore((s) => s.accessToken);
+	const user = useAuthStore((s) => s.user);
+	const [scrolled, setScrolled] = useState(false);
+
+	// Redirect if already logged in
+	useEffect(() => {
+		if (accessToken && user) navigate("/app/workspaces", { replace: true });
+	}, [accessToken, user, navigate]);
+
+	useEffect(() => {
+		const handler = () => setScrolled(window.scrollY > 20);
+		window.addEventListener("scroll", handler);
+		return () => window.removeEventListener("scroll", handler);
+	}, []);
+
 	return (
-		<div className="mx-auto mt-20 w-full max-w-xl rounded-3xl border border-ghost-white-200 bg-white/90 p-10 shadow-xl">
-			<h1 className="text-4xl font-semibold tracking-tight text-jet-black-900 font-display">CollabBoard</h1>
-			<p className="mt-3 text-sm text-jet-black-600">Real-time collaboration for tasks, whiteboards, and team chat.</p>
-			<div className="mt-6 flex flex-wrap gap-3">
-				<Link
-					to="/login"
-					className="inline-flex items-center justify-center rounded-xl bg-space-indigo-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-space-indigo-600"
+		<div style={{ minHeight: "100vh", background: "var(--bg-base)", display: "flex", flexDirection: "column" }}>
+			{/* ── Navbar ── */}
+			<nav
+				style={{
+					position: "sticky",
+					top: 0,
+					zIndex: 50,
+					display: "flex",
+					alignItems: "center",
+					justifyContent: "space-between",
+					padding: "0 32px",
+					height: 60,
+					background: scrolled ? "rgba(15,17,23,0.85)" : "transparent",
+					backdropFilter: scrolled ? "blur(12px)" : "none",
+					borderBottom: scrolled ? "1px solid var(--border)" : "1px solid transparent",
+					transition: "all 0.3s",
+				}}
+			>
+				<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+					<span style={{ fontSize: 22 }}>⬡</span>
+					<span style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)" }}>CollabBoard</span>
+				</div>
+				<div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+					<Link
+						to="/login"
+						style={{
+							color: "var(--text-secondary)",
+							fontSize: 14,
+							fontWeight: 500,
+							textDecoration: "none",
+							padding: "6px 12px",
+							borderRadius: "var(--radius-md)",
+							transition: "color 0.15s",
+						}}
+						onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text-primary)")}
+						onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-secondary)")}
+					>
+						Log in
+					</Link>
+					<Link to="/register" className="btn btn-primary" style={{ fontSize: 14 }}>
+						Get started →
+					</Link>
+				</div>
+			</nav>
+
+			{/* ── Hero ── */}
+			<section
+				style={{
+					flex: 1,
+					display: "flex",
+					flexDirection: "column",
+					alignItems: "center",
+					justifyContent: "center",
+					textAlign: "center",
+					padding: "80px 24px 60px",
+					position: "relative",
+					overflow: "hidden",
+				}}
+			>
+				{/* Grid pattern bg */}
+				<div
+					className="grid-pattern"
+					style={{
+						position: "absolute",
+						inset: 0,
+						opacity: 0.06,
+						pointerEvents: "none",
+					}}
+				/>
+
+				{/* Glow blobs */}
+				<div
+					style={{
+						position: "absolute",
+						width: 600,
+						height: 600,
+						borderRadius: "50%",
+						background: "radial-gradient(circle, rgba(108,99,255,0.15) 0%, transparent 70%)",
+						top: "50%",
+						left: "50%",
+						transform: "translate(-50%, -60%)",
+						pointerEvents: "none",
+					}}
+				/>
+
+				<div style={{ position: "relative", maxWidth: 760 }}>
+					<div
+						style={{
+							display: "inline-flex",
+							alignItems: "center",
+							gap: 8,
+							background: "var(--accent-muted)",
+							border: "1px solid rgba(108,99,255,0.3)",
+							borderRadius: "var(--radius-full)",
+							padding: "4px 14px",
+							fontSize: 12,
+							fontWeight: 500,
+							color: "var(--accent)",
+							marginBottom: 24,
+						}}
+					>
+						⚡ Real-time collaboration
+					</div>
+
+					<h1
+						style={{
+							fontSize: "clamp(40px, 6vw, 72px)",
+							fontWeight: 700,
+							color: "var(--text-primary)",
+							lineHeight: 1.15,
+							margin: 0,
+						}}
+					>
+						Work together.
+						<br />
+						<span style={{ color: "var(--accent)" }}>In real time.</span>
+					</h1>
+
+					<p
+						style={{
+							fontSize: 18,
+							color: "var(--text-secondary)",
+							marginTop: 20,
+							lineHeight: 1.6,
+							maxWidth: 540,
+							margin: "20px auto 0",
+						}}
+					>
+						Kanban boards, shared whiteboard, and team chat — all synced live across your whole team.
+					</p>
+
+					<div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 36, flexWrap: "wrap" }}>
+						<Link to="/register" className="btn btn-primary btn-lg">
+							Get started free
+						</Link>
+						<Link
+							to="/login"
+							className="btn btn-ghost btn-lg"
+							style={{ borderColor: "var(--border)" }}
+						>
+							Watch demo ▶
+						</Link>
+					</div>
+
+					{/* Mock screenshot card */}
+					<div
+						style={{
+							marginTop: 56,
+							background: "var(--bg-surface)",
+							border: "1px solid var(--border)",
+							borderRadius: "var(--radius-xl)",
+							padding: 24,
+							boxShadow: "0 24px 80px rgba(0,0,0,0.6)",
+							transform: "perspective(1200px) rotateX(4deg)",
+							maxWidth: 800,
+							width: "100%",
+						}}
+					>
+						{/* Fake board header */}
+						<div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+							{["To Do", "In Progress", "Review", "Done"].map((col, i) => {
+								const colors = ["#8B8FA8", "#60A5FA", "#A78BFA", "#34D399"];
+								return (
+									<div
+										key={col}
+										style={{
+											flex: 1,
+											background: "var(--bg-base)",
+											borderRadius: "var(--radius-md)",
+											padding: "8px 10px",
+											borderTop: `3px solid ${colors[i]}`,
+											fontSize: 12,
+											fontWeight: 600,
+											color: colors[i],
+										}}
+									>
+										{col}
+									</div>
+								);
+							})}
+						</div>
+						{/* Fake task cards */}
+						{[
+							{ col: 0, title: "Fix login bug", priority: "🔴" },
+							{ col: 1, title: "Design nav component", priority: "🟡" },
+							{ col: 1, title: "Setup CI pipeline", priority: "🟠" },
+							{ col: 2, title: "Review PR #42", priority: "🟢" },
+							{ col: 3, title: "Deploy to staging", priority: "🟢" },
+						].map((t, i) => (
+							<div
+								key={i}
+								style={{
+									background: "var(--bg-surface-2)",
+									border: "1px solid var(--border)",
+									borderRadius: "var(--radius-sm)",
+									padding: "8px 10px",
+									fontSize: 12,
+									color: "var(--text-primary)",
+									marginBottom: 6,
+									display: "inline-flex",
+									alignItems: "center",
+									gap: 6,
+									width: `${20 + Math.random() * 20}%`,
+									marginLeft: `${t.col * 25}%`,
+								}}
+							>
+								{t.priority} {t.title}
+							</div>
+						))}
+					</div>
+				</div>
+			</section>
+
+			{/* ── Features ── */}
+			<section
+				style={{
+					padding: "64px 32px",
+					maxWidth: 1000,
+					margin: "0 auto",
+					width: "100%",
+				}}
+			>
+				<h2
+					style={{
+						textAlign: "center",
+						fontSize: 14,
+						fontWeight: 600,
+						color: "var(--text-muted)",
+						textTransform: "uppercase",
+						letterSpacing: "0.1em",
+						marginBottom: 40,
+					}}
 				>
-					Log in
-				</Link>
-				<Link
-					to="/register"
-					className="inline-flex items-center justify-center rounded-xl border border-ghost-white-200 bg-white px-4 py-2 text-sm font-semibold text-jet-black-700 transition hover:bg-ghost-white-100"
-				>
-					Create account
-				</Link>
-			</div>
+					Everything your team needs
+				</h2>
+				<div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+					{FEATURES.map((f) => (
+						<FeatureCard key={f.title} {...f} />
+					))}
+				</div>
+			</section>
+
+			{/* ── Footer ── */}
+			<footer
+				style={{
+					textAlign: "center",
+					padding: "24px 32px",
+					borderTop: "1px solid var(--border)",
+					fontSize: 13,
+					color: "var(--text-muted)",
+				}}
+			>
+				© 2025 CollabBoard · Built with MERN + Socket.io + Redis
+			</footer>
 		</div>
 	);
 }

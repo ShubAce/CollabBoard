@@ -8,13 +8,16 @@ import BoardList from "./pages/BoardList.jsx";
 import BoardPage from "./pages/BoardPage.jsx";
 import ChatPage from "./pages/ChatPage.jsx";
 import CreateWorkspace from "./pages/CreateWorkspace.jsx";
+import InviteAcceptPage from "./pages/InviteAcceptPage.jsx";
 import LandingPage from "./pages/LandingPage.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
 import NotFoundPage from "./pages/NotFoundPage.jsx";
 import NotificationsPage from "./pages/NotificationsPage.jsx";
+import ProfilePage from "./pages/ProfilePage.jsx";
 import RegisterPage from "./pages/RegisterPage.jsx";
 import WorkspaceDashboard from "./pages/WorkspaceDashboard.jsx";
 import WorkspaceList from "./pages/WorkspaceList.jsx";
+import WorkspaceSettings from "./pages/WorkspaceSettings.jsx";
 import useAuthStore from "./store/authStore";
 
 function App() {
@@ -86,6 +89,10 @@ function App() {
 					path="/auth/callback"
 					element={<AuthCallbackPage />}
 				/>
+				<Route
+					path="/invite/accept"
+					element={<InviteAcceptPage />}
+				/>
 				<Route element={<ProtectedRoute />}>
 					<Route
 						path="/app"
@@ -125,8 +132,16 @@ function App() {
 							element={<ChatPage />}
 						/>
 						<Route
+							path="workspaces/:workspaceId/settings"
+							element={<WorkspaceSettings />}
+						/>
+						<Route
 							path="notifications"
 							element={<NotificationsPage />}
+						/>
+						<Route
+							path="profile"
+							element={<ProfilePage />}
 						/>
 					</Route>
 				</Route>

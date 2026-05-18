@@ -51,6 +51,32 @@ const formatRelative = (iso) => {
 	return `${Math.floor(hrs / 24)}d ago`;
 };
 
+const getNotificationTitle = (notif) => {
+	if (notif.type === "workspace_invite") {
+		return notif.payload?.workspaceName || "Workspace invitation";
+	}
+	return notif.payload?.taskTitle || "";
+};
+
+const getNotificationDescription = (notif) => {
+	if (notif.type === "workspace_invite") {
+		const inviterName = notif.payload?.inviterName || "Someone";
+		const workspaceName = notif.payload?.workspaceName || "a workspace";
+		const role = notif.payload?.role || "viewer";
+		return `${inviterName} invited you to join ${workspaceName} as ${role}.`;
+	}
+	if (notif.type === "task_assigned") {
+		return "A task was assigned to you.";
+	}
+	if (notif.type === "comment_mention") {
+		return "You were mentioned in a comment.";
+	}
+	if (notif.type === "task_due") {
+		return "A due date reminder was sent for this task.";
+	}
+	return "";
+};
+
 export default function NotificationsPage() {
 	const [notifications, setNotifications] = useState([]);
 	const [unreadCount, setUnreadCount] = useState(0);
@@ -87,8 +113,11 @@ export default function NotificationsPage() {
 				// ignore
 			}
 		}
-		// Navigate to the relevant board if payload has it
-		const { workspaceId, boardId } = notif.payload || {};
+		const { workspaceId, boardId, inviteToken } = notif.payload || {};
+		if (notif.type === "workspace_invite" && inviteToken) {
+			navigate(`/invite/accept?token=${encodeURIComponent(inviteToken)}`);
+			return;
+		}
 		if (workspaceId && boardId) {
 			navigate(`/app/workspaces/${workspaceId}/boards/${boardId}`);
 		}
@@ -181,12 +210,29 @@ export default function NotificationsPage() {
 											<span className="h-2 w-2 rounded-full bg-space-indigo-500 shrink-0" />
 										)}
 									</div>
-									{notif.payload?.taskTitle && (
+									{getNotificationTitle(notif) && (
 										<p className="mt-0.5 text-sm font-medium text-jet-black-900 truncate">
-											{notif.payload.taskTitle}
+											{getNotificationTitle(notif)}
+										</p>
+									)}
+									{getNotificationDescription(notif) && (
+										<p className="mt-1 text-xs text-jet-black-500">
+											{getNotificationDescription(notif)}
 										</p>
 									)}
 									<p className="mt-0.5 text-xs text-jet-black-400">{formatRelative(notif.createdAt)}</p>
+									{notif.type === "workspace_invite" && notif.payload?.inviteToken && (
+										<button
+											type="button"
+											onClick={(e) => {
+												e.stopPropagation();
+												markRead(notif);
+											}}
+											className="mt-3 inline-flex rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-600"
+										>
+											Review invite
+										</button>
+									)}
 								</div>
 
 								{/* Delete button */}

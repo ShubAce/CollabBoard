@@ -9,6 +9,7 @@ import { BullAdapter } from "@bull-board/api/bullAdapter";
 import { ExpressAdapter } from "@bull-board/express";
 import authRoutes from "./routes/auth.routes.js";
 import boardRoutes from "./routes/board.routes.js";
+import inviteRoutes from "./routes/invite.routes.js";
 import notificationRoutes from "./routes/notification.routes.js";
 import taskRoutes from "./routes/task.routes.js";
 import userRoutes from "./routes/user.routes.js";
@@ -50,6 +51,7 @@ app.use("/api/v1/auth/register", authLimiter);
 
 // ─── Routes ────────────────────────────────────────────────────────────────────
 app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/invite", inviteRoutes);
 app.use("/api/v1/users", authenticateToken, userRoutes);
 app.use("/api/v1/workspaces", authenticateToken, workspaceRoutes);
 app.use("/api/v1/workspaces/:workspaceId/boards", authenticateToken, checkWorkspaceMember, boardRoutes);

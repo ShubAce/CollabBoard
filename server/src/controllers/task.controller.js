@@ -54,6 +54,15 @@ const normalizeOrder = (value) => {
 	return parsed < 0 ? 0 : Math.floor(parsed);
 };
 
+const statusByColumnTitle = {
+	"to do": "todo",
+	"in progress": "in_progress",
+	review: "review",
+	done: "done",
+};
+
+const getStatusForColumn = (column) => statusByColumnTitle[column?.title?.trim().toLowerCase()] || "todo";
+
 const ensureBoard = async (workspaceId, boardId) => {
 	return Board.findOne({ _id: boardId, workspace: workspaceId });
 };
@@ -110,6 +119,7 @@ export const createTask = async (req, res, next) => {
 			description: parsed.data.description || "",
 			order,
 			priority: parsed.data.priority || "medium",
+			status: getStatusForColumn(column),
 			assignees: parsed.data.assignees || [],
 			labels: parsed.data.labels || [],
 			dueDate,
@@ -257,9 +267,11 @@ export const moveTask = async (req, res, next) => {
 		}
 
 		const targetColumnId = parsed.data.targetColumnId;
-		if (!board.columns.id(targetColumnId)) {
+		const targetColumn = board.columns.id(targetColumnId);
+		if (!targetColumn) {
 			return res.status(400).json({ message: "Target column not found" });
 		}
+		const targetStatus = getStatusForColumn(targetColumn);
 
 		const sameColumn = task.columnId.toString() === targetColumnId;
 		const columnCount = await Task.countDocuments({ board: task.board, columnId: targetColumnId });
@@ -288,6 +300,7 @@ export const moveTask = async (req, res, next) => {
 			}
 
 			task.order = newOrder;
+			task.status = targetStatus;
 			await task.save();
 			await invalidateBoardCache(task.board);
 			emitToBoard(req, task.board, "task:moved", {
@@ -295,6 +308,7 @@ export const moveTask = async (req, res, next) => {
 				fromColumnId,
 				toColumnId: targetColumnId,
 				newOrder: task.order,
+				status: task.status,
 			});
 
 			return res.status(200).json({
@@ -302,6 +316,7 @@ export const moveTask = async (req, res, next) => {
 				fromColumnId,
 				toColumnId: targetColumnId,
 				newOrder: task.order,
+				status: task.status,
 			});
 		}
 
@@ -310,6 +325,7 @@ export const moveTask = async (req, res, next) => {
 
 		task.columnId = targetColumnId;
 		task.order = newOrder;
+		task.status = targetStatus;
 		await task.save();
 		await invalidateBoardCache(task.board);
 		emitToBoard(req, task.board, "task:moved", {
@@ -317,6 +333,7 @@ export const moveTask = async (req, res, next) => {
 			fromColumnId,
 			toColumnId: targetColumnId,
 			newOrder: task.order,
+			status: task.status,
 		});
 
 		try {
@@ -337,6 +354,7 @@ export const moveTask = async (req, res, next) => {
 			fromColumnId,
 			toColumnId: targetColumnId,
 			newOrder: task.order,
+			status: task.status,
 		});
 	} catch (err) {
 		return next(err);

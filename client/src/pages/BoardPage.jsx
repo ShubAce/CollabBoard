@@ -13,6 +13,9 @@ export default function BoardPage() {
 	const [status, setStatus] = useState("loading");
 	const [error, setError] = useState("");
 	const [activeView, setActiveView] = useState("board");
+	const [taskForm, setTaskForm] = useState({ columnId: null, title: "", description: "", priority: "medium" });
+	const [taskError, setTaskError] = useState("");
+	const [creatingTask, setCreatingTask] = useState(false);
 
 	useEffect(() => {
 		let isActive = true;
@@ -43,8 +46,8 @@ export default function BoardPage() {
 
 	useBoardSocket(boardId, {
 		onTaskCreated: ({ task }) => setBoard((prev) => addTaskToColumn(prev, task)),
-		onTaskMoved: ({ taskId, fromColumnId, toColumnId, newOrder }) =>
-			setBoard((prev) => moveTaskInBoard(prev, taskId, fromColumnId, toColumnId, newOrder)),
+		onTaskMoved: ({ taskId, fromColumnId, toColumnId, newOrder, status }) =>
+			setBoard((prev) => moveTaskInBoard(prev, taskId, fromColumnId, toColumnId, newOrder, status ? { status } : {})),
 		onTaskUpdated: ({ taskId, changes }) => setBoard((prev) => updateTaskInBoard(prev, taskId, changes)),
 		onTaskDeleted: ({ taskId }) => setBoard((prev) => removeTaskFromBoard(prev, taskId)),
 		onColumnsReordered: ({ orderedColumnIds }) => setBoard((prev) => reorderColumns(prev, orderedColumnIds)),
@@ -97,6 +100,38 @@ export default function BoardPage() {
 			if (previousBoard) {
 				setBoard(previousBoard);
 			}
+		}
+	};
+
+	const openTaskForm = (columnId) => {
+		setTaskError("");
+		setTaskForm({ columnId, title: "", description: "", priority: "medium" });
+	};
+
+	const closeTaskForm = () => {
+		setTaskError("");
+		setTaskForm({ columnId: null, title: "", description: "", priority: "medium" });
+	};
+
+	const handleCreateTask = async (event) => {
+		event.preventDefault();
+		if (!taskForm.columnId || !taskForm.title.trim()) return;
+
+		setCreatingTask(true);
+		setTaskError("");
+		try {
+			const { data } = await api.post(`/workspaces/${workspaceId}/boards/${boardId}/tasks`, {
+				columnId: taskForm.columnId,
+				title: taskForm.title.trim(),
+				description: taskForm.description.trim(),
+				priority: taskForm.priority,
+			});
+			setBoard((prev) => addTaskToColumn(prev, data));
+			closeTaskForm();
+		} catch (err) {
+			setTaskError(err.response?.data?.message || "Failed to create task");
+		} finally {
+			setCreatingTask(false);
 		}
 	};
 
@@ -278,6 +313,62 @@ export default function BoardPage() {
 															</div>
 														)}
 													</Droppable>
+													{taskForm.columnId === column._id.toString() ? (
+														<form
+															onSubmit={handleCreateTask}
+															className="mt-3 rounded-xl border border-ghost-white-200 bg-white p-3"
+														>
+															<input
+																value={taskForm.title}
+																onChange={(event) => setTaskForm((prev) => ({ ...prev, title: event.target.value }))}
+																placeholder="Task title"
+																autoFocus
+																className="w-full rounded-lg border border-ghost-white-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-space-indigo-400/30"
+															/>
+															<textarea
+																value={taskForm.description}
+																onChange={(event) => setTaskForm((prev) => ({ ...prev, description: event.target.value }))}
+																placeholder="Description"
+																rows={2}
+																className="mt-2 w-full resize-none rounded-lg border border-ghost-white-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-space-indigo-400/30"
+															/>
+															<select
+																value={taskForm.priority}
+																onChange={(event) => setTaskForm((prev) => ({ ...prev, priority: event.target.value }))}
+																className="mt-2 w-full rounded-lg border border-ghost-white-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-space-indigo-400/30"
+															>
+																<option value="low">Low priority</option>
+																<option value="medium">Medium priority</option>
+																<option value="high">High priority</option>
+																<option value="urgent">Urgent priority</option>
+															</select>
+															{taskError && <p className="mt-2 text-xs text-red-600">{taskError}</p>}
+															<div className="mt-3 flex items-center gap-2">
+																<button
+																	type="submit"
+																	disabled={creatingTask}
+																	className="rounded-lg bg-space-indigo-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-space-indigo-600 disabled:opacity-50"
+																>
+																	{creatingTask ? "Adding..." : "Add task"}
+																</button>
+																<button
+																	type="button"
+																	onClick={closeTaskForm}
+																	className="rounded-lg border border-ghost-white-200 px-3 py-1.5 text-xs font-semibold text-jet-black-700 transition hover:bg-ghost-white-100"
+																>
+																	Cancel
+																</button>
+															</div>
+														</form>
+													) : (
+														<button
+															type="button"
+															onClick={() => openTaskForm(column._id.toString())}
+															className="mt-3 w-full rounded-xl border border-dashed border-ghost-white-200 bg-white/60 px-3 py-2 text-left text-xs font-semibold text-jet-black-500 transition hover:border-space-indigo-300 hover:text-space-indigo-600"
+														>
+															Add task
+														</button>
+													)}
 												</div>
 											)}
 										</Draggable>

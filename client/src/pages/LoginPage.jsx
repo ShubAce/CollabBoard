@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import api from "../api/axios";
 import useAuthStore from "../store/authStore";
 
 export default function LoginPage() {
 	const navigate = useNavigate();
+	const [searchParams] = useSearchParams();
 	const setAuth = useAuthStore((state) => state.setAuth);
 	const [form, setForm] = useState({ email: "", password: "" });
 	const [error, setError] = useState("");
@@ -22,7 +23,7 @@ export default function LoginPage() {
 		try {
 			const { data } = await api.post("/auth/login", form);
 			setAuth(data.user, data.accessToken);
-			navigate("/app");
+			navigate(searchParams.get("next") || "/app");
 		} catch (err) {
 			setError(err.response?.data?.message || "Login failed");
 		} finally {

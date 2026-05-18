@@ -257,7 +257,38 @@ export const deleteColumn = async (req, res, next) => {
 			return res.status(404).json({ message: "Column not found" });
 		}
 
-		await Task.deleteMany({ board: board._id, columnId });
+		if (board.columns.length === 1) {
+			return res.status(400).json({ message: "Cannot delete the only column on a board" });
+		}
+
+		// Migrate tasks to the "To Do" column (order=0) instead of deleting them
+		const todoColumn = board.columns
+			.filter((c) => c._id.toString() !== columnId)
+			.sort((a, b) => a.order - b.order)[0]; // fallback: first remaining column
+
+		if (todoColumn) {
+			// Find the current max order in the target column so we can append after it
+			const maxOrderDoc = await Task.findOne({ board: board._id, columnId: todoColumn._id })
+				.sort({ order: -1 })
+				.select("order");
+			let nextOrder = maxOrderDoc ? maxOrderDoc.order + 1 : 0;
+
+			// Fetch tasks being evicted, sorted so their relative order is preserved
+			const evictedTasks = await Task.find({ board: board._id, columnId })
+				.sort({ order: 1 })
+				.select("_id");
+
+			for (const t of evictedTasks) {
+				await Task.findByIdAndUpdate(t._id, {
+					columnId: todoColumn._id,
+					order: nextOrder++,
+					status: "todo",
+				});
+			}
+		} else {
+			// No sibling column exists — hard delete (should not happen given the guard above)
+			await Task.deleteMany({ board: board._id, columnId });
+		}
 
 		board.columns = board.columns.filter((entry) => entry._id.toString() !== columnId);
 		board.columns.forEach((entry, index) => {
@@ -266,7 +297,7 @@ export const deleteColumn = async (req, res, next) => {
 
 		await board.save();
 		await invalidateBoardCache(board._id);
-		return res.status(200).json({ message: "Column deleted" });
+		return res.status(200).json({ message: "Column deleted", migratedToColumnId: todoColumn?._id });
 	} catch (err) {
 		return next(err);
 	}

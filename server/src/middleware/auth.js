@@ -2,9 +2,13 @@ import jwt from "jsonwebtoken";
 import { isBlacklisted } from "../services/token.services.js";
 import User from "../models/User.js";
 
-export const authenticateToken = async (req, res, next) => {
+const readBearerToken = (req) => {
 	const authHeader = req.headers["authorization"];
-	const token = authHeader?.split(" ")[1];
+	return authHeader?.split(" ")[1] || null;
+};
+
+export const authenticateToken = async (req, res, next) => {
+	const token = readBearerToken(req);
 	if (!token) return res.status(401).json({ message: "No token provided" });
 
 	try {
@@ -24,4 +28,29 @@ export const authenticateToken = async (req, res, next) => {
 	} catch (err) {
 		return res.status(401).json({ message: "Invalid or expired token" });
 	}
+};
+
+export const attachUserIfPresent = async (req, res, next) => {
+	const token = readBearerToken(req);
+	if (!token) {
+		return next();
+	}
+
+	try {
+		const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
+		if (await isBlacklisted(decoded.jti)) {
+			return next();
+		}
+
+		const user = await User.findById(decoded.userId).select("-passwordHash -refreshTokenHash");
+		if (user) {
+			req.user = user;
+			req.tokenJti = decoded.jti;
+			req.tokenExp = decoded.exp;
+		}
+	} catch {
+		// Intentionally ignore invalid optional auth on public routes.
+	}
+
+	return next();
 };

@@ -21,6 +21,7 @@ export const addTaskToColumn = (board, task) => {
 	const nextBoard = cloneBoard(board);
 	const column = nextBoard.columns.find((entry) => toId(entry._id) === toId(task.columnId));
 	if (!column) return board;
+	if ((column.tasks || []).some((entry) => toId(entry._id) === toId(task._id))) return board;
 
 	const tasks = [...(column.tasks || [])];
 	const insertIndex = Math.min(resolveOrder(task.order, tasks.length), tasks.length);
@@ -62,7 +63,7 @@ export const removeTaskFromBoard = (board, taskId) => {
 	return board;
 };
 
-export const moveTaskInBoard = (board, taskId, fromColumnId, toColumnId, newOrder) => {
+export const moveTaskInBoard = (board, taskId, fromColumnId, toColumnId, newOrder, changes = {}) => {
 	if (!board) return board;
 	const nextBoard = cloneBoard(board);
 	const fromColumn = nextBoard.columns.find((entry) => toId(entry._id) === toId(fromColumnId));
@@ -76,7 +77,7 @@ export const moveTaskInBoard = (board, taskId, fromColumnId, toColumnId, newOrde
 		const tasks = [...fromColumn.tasks];
 		const [task] = tasks.splice(fromIndex, 1);
 		const insertIndex = Math.min(resolveOrder(newOrder, tasks.length), tasks.length);
-		tasks.splice(insertIndex, 0, { ...task, order: insertIndex });
+		tasks.splice(insertIndex, 0, { ...task, ...changes, order: insertIndex });
 		fromColumn.tasks = reindexTasks(tasks);
 		return nextBoard;
 	}
@@ -85,7 +86,7 @@ export const moveTaskInBoard = (board, taskId, fromColumnId, toColumnId, newOrde
 	const [task] = fromTasks.splice(fromIndex, 1);
 	const toTasks = [...toColumn.tasks];
 	const insertIndex = Math.min(resolveOrder(newOrder, toTasks.length), toTasks.length);
-	toTasks.splice(insertIndex, 0, { ...task, columnId: toColumnId, order: insertIndex });
+	toTasks.splice(insertIndex, 0, { ...task, ...changes, columnId: toColumnId, order: insertIndex });
 
 	fromColumn.tasks = reindexTasks(fromTasks);
 	toColumn.tasks = reindexTasks(toTasks);

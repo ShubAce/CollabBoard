@@ -6,25 +6,36 @@ import ActivityLog from "../../models/ActivityLog.js";
 // Workers run as standalone processes — need their own DB connection
 await mongoose.connect(process.env.MONGO_URI);
 
-activityQueue.process(async (job) => {
-	const { name, data } = job;
+const actionMap = {
+	log_task_created: { action: "task.created", entityType: "task" },
+	log_task_moved: { action: "task.moved", entityType: "task" },
+	log_task_deleted: { action: "task.deleted", entityType: "task" },
+	log_member_invited: { action: "member.invited", entityType: "workspace_invite" },
+	log_comment_added: { action: "comment.added", entityType: "task" },
+};
 
-	const actionMap = {
-		log_task_created: "task.created",
-		log_task_moved: "task.moved",
-		log_task_deleted: "task.deleted",
-		log_member_invited: "member.invited",
-		log_comment_added: "comment.added",
-	};
+const createActivityLog = async (job) => {
+	const { name, data } = job;
+	const config = actionMap[name];
+	if (!config) {
+		throw new Error(`Unknown activity job type: ${name}`);
+	}
 
 	await ActivityLog.create({
 		workspace: data.workspaceId,
 		actor: data.actorId,
-		action: actionMap[name],
-		entity: { type: "task", id: data.taskId },
+		action: config.action,
+		entity: {
+			type: config.entityType,
+			id: data.taskId || data.meta?.inviteId || null,
+		},
 		meta: data,
 	});
-});
+};
+
+for (const jobName of Object.keys(actionMap)) {
+	activityQueue.process(jobName, createActivityLog);
+}
 
 activityQueue.on("failed", (job, err) => {
 	console.error(`Activity job failed [${job.name}]:`, err.message);

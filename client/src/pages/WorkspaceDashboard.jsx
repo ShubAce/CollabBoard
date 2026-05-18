@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import api from "../api/axios";
+import useAuthStore from "../store/authStore";
 
 export default function WorkspaceDashboard() {
 	const { workspaceId } = useParams();
+	const user = useAuthStore((state) => state.user);
 	const [workspace, setWorkspace] = useState(null);
 	const [boards, setBoards] = useState([]);
 	const [status, setStatus] = useState("loading");
@@ -56,18 +58,40 @@ export default function WorkspaceDashboard() {
 		);
 	}
 
+	const owner = workspace?.owner;
+	const ownerId = owner?._id || owner;
+	const isCreatedByUser = workspace?.isOwner || ownerId?.toString?.() === user?._id;
+
 	return (
 		<section className="rounded-2xl border border-ghost-white-200 bg-white/90 p-6 shadow-sm">
 			<div className="flex flex-wrap items-center justify-between gap-4">
 				<div>
-					<h2 className="text-2xl font-semibold text-jet-black-900 font-display">{workspace?.name}</h2>
+					<div className="flex flex-wrap items-center gap-2">
+						<h2 className="text-2xl font-semibold text-jet-black-900 font-display">{workspace?.name}</h2>
+						<span
+							className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+								isCreatedByUser ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+							}`}
+						>
+							{isCreatedByUser ? "Created by you" : "Joined workspace"}
+						</span>
+					</div>
 					<p className="mt-1 text-sm text-jet-black-500">{workspace?.description || "No description"}</p>
+					<p className="mt-2 text-xs text-jet-black-500">
+						Owner: {isCreatedByUser ? "You" : owner?.name || "Unknown"} · Your role: {workspace?.currentUserRole || "member"}
+					</p>
 				</div>
 				<Link
 					className="inline-flex items-center justify-center rounded-xl bg-space-indigo-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-space-indigo-600"
 					to={`/app/workspaces/${workspaceId}/boards`}
 				>
 					View boards
+				</Link>
+				<Link
+					className="inline-flex items-center justify-center rounded-xl border border-ghost-white-200 bg-white px-4 py-2 text-sm font-semibold text-jet-black-700 transition hover:bg-ghost-white-100"
+					to={`/app/workspaces/${workspaceId}/settings`}
+				>
+					Settings
 				</Link>
 			</div>
 

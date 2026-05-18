@@ -67,13 +67,27 @@ export default function AppShell() {
 					>
 						Workspaces
 					</Link>
+					<Link
+						to="/app/profile"
+						className="rounded-xl border border-ghost-white-200 bg-ghost-white-100 px-3 py-2 text-jet-black-700 transition hover:bg-ghost-white-200"
+					>
+						Profile
+					</Link>
 					{workspaceId && (
-						<Link
-							to={`/app/workspaces/${workspaceId}/chat`}
-							className="rounded-xl border border-ghost-white-200 bg-ghost-white-100 px-3 py-2 text-jet-black-700 transition hover:bg-ghost-white-200"
-						>
-							Chat
-						</Link>
+						<>
+							<Link
+								to={`/app/workspaces/${workspaceId}/chat`}
+								className="rounded-xl border border-ghost-white-200 bg-ghost-white-100 px-3 py-2 text-jet-black-700 transition hover:bg-ghost-white-200"
+							>
+								Chat
+							</Link>
+							<Link
+								to={`/app/workspaces/${workspaceId}/settings`}
+								className="rounded-xl border border-ghost-white-200 bg-ghost-white-100 px-3 py-2 text-jet-black-700 transition hover:bg-ghost-white-200"
+							>
+								Settings
+							</Link>
+						</>
 					)}
 					{/* Bell / Notifications */}
 					<Link

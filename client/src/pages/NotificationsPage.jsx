@@ -4,10 +4,11 @@ import api from "../api/axios";
 import Icon from "../components/ui/Icon.jsx";
 
 const TYPE_META = {
-	task_assigned:   { icon: "check", label: "Task assigned",         accentColor: "var(--accent)", bgColor: "var(--accent-muted)" },
-	comment_mention: { icon: "chat", label: "Mentioned",             accentColor: "var(--warning)", bgColor: "var(--warning-muted)" },
-	workspace_invite:{ icon: "mail",  label: "Workspace invite",      accentColor: "var(--success)", bgColor: "var(--success-muted)" },
-	task_due:        { icon: "alert", label: "Due reminder",           accentColor: "var(--danger)", bgColor: "var(--danger-muted)" },
+	task_assigned: { icon: "check", label: "Task assigned", accentColor: "var(--accent)", bgColor: "var(--accent-muted)" },
+	comment_mention: { icon: "chat", label: "Mentioned", accentColor: "var(--warning)", bgColor: "var(--warning-muted)" },
+	chat_mention: { icon: "chat", label: "Chat mention", accentColor: "var(--warning)", bgColor: "var(--warning-muted)" },
+	workspace_invite: { icon: "mail", label: "Workspace invite", accentColor: "var(--success)", bgColor: "var(--success-muted)" },
+	task_due: { icon: "alert", label: "Due reminder", accentColor: "var(--danger)", bgColor: "var(--danger-muted)" },
 };
 
 const formatRelative = (iso) => {
@@ -22,6 +23,7 @@ const formatRelative = (iso) => {
 
 const getNotificationTitle = (n) => {
 	if (n.type === "workspace_invite") return n.payload?.workspaceName || "Workspace invitation";
+	if (n.type === "chat_mention") return n.payload?.workspaceName || "Workspace chat";
 	return n.payload?.taskTitle || "";
 };
 
@@ -31,6 +33,7 @@ const getNotificationDescription = (n) => {
 	}
 	if (n.type === "task_assigned") return "A task was assigned to you.";
 	if (n.type === "comment_mention") return "You were mentioned in a comment.";
+	if (n.type === "chat_mention") return `${n.payload?.senderName || "Someone"} mentioned you in workspace chat.`;
 	if (n.type === "task_due") return "A due date reminder for this task.";
 	return "";
 };
@@ -38,10 +41,26 @@ const getNotificationDescription = (n) => {
 function NotifRow({ notif, onRead, onDelete }) {
 	const meta = TYPE_META[notif.type] || TYPE_META.task_assigned;
 	const [hovered, setHovered] = useState(false);
+	const isInviteResolved = notif.type === "workspace_invite" && (notif.payload?.inviteStatus === "accepted" || !notif.payload?.inviteToken);
+	const isActionable = !isInviteResolved;
+	const statusLabel = notif.isRead ? "Seen" : "Unread";
+	const statusStyle = {
+		fontSize: 10,
+		fontWeight: 600,
+		letterSpacing: "0.06em",
+		textTransform: "uppercase",
+		padding: "2px 6px",
+		borderRadius: "999px",
+		border: "1px solid var(--border)",
+		color: notif.isRead ? "var(--text-muted)" : "var(--accent)",
+		background: notif.isRead ? "transparent" : "var(--accent-muted)",
+	};
 
 	return (
 		<div
-			onClick={() => onRead(notif)}
+			onClick={() => {
+				if (isActionable) onRead(notif);
+			}}
 			onMouseEnter={() => setHovered(true)}
 			onMouseLeave={() => setHovered(false)}
 			style={{
@@ -50,7 +69,7 @@ function NotifRow({ notif, onRead, onDelete }) {
 				alignItems: "flex-start",
 				gap: 12,
 				padding: "14px 16px",
-				cursor: "pointer",
+				cursor: isActionable ? "pointer" : "default",
 				background: notif.isRead ? "transparent" : "rgba(108,99,255,0.05)",
 				borderBottom: "1px solid var(--border)",
 				transition: "background 0.15s",
@@ -58,32 +77,80 @@ function NotifRow({ notif, onRead, onDelete }) {
 		>
 			{/* Unread dot */}
 			{!notif.isRead && (
-				<div style={{ position: "absolute", left: 0, top: "50%", transform: "translateY(-50%)", width: 3, height: 28, background: "var(--accent)", borderRadius: "0 2px 2px 0" }} />
+				<div
+					style={{
+						position: "absolute",
+						left: 0,
+						top: "50%",
+						transform: "translateY(-50%)",
+						width: 3,
+						height: 28,
+						background: "var(--accent)",
+						borderRadius: "0 2px 2px 0",
+					}}
+				/>
 			)}
 
 			{/* Icon */}
-			<div style={{ width: 36, height: 36, borderRadius: "var(--radius-md)", background: meta.bgColor, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0, color: meta.accentColor }}>
-				<Icon name={meta.icon} size={18} />
+			<div
+				style={{
+					width: 36,
+					height: 36,
+					borderRadius: "var(--radius-md)",
+					background: meta.bgColor,
+					display: "flex",
+					alignItems: "center",
+					justifyContent: "center",
+					fontSize: 16,
+					flexShrink: 0,
+					color: meta.accentColor,
+				}}
+			>
+				<Icon
+					name={meta.icon}
+					size={18}
+				/>
 			</div>
 
 			{/* Content */}
 			<div style={{ flex: 1, minWidth: 0 }}>
 				<div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
-					<span style={{ fontSize: 11, fontWeight: 600, color: meta.accentColor, textTransform: "uppercase", letterSpacing: "0.06em" }}>{meta.label}</span>
+					<span style={{ fontSize: 11, fontWeight: 600, color: meta.accentColor, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+						{meta.label}
+					</span>
+					<span style={statusStyle}>{statusLabel}</span>
 					{!notif.isRead && <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)", flexShrink: 0 }} />}
 				</div>
 				{getNotificationTitle(notif) && (
-					<p style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)", margin: "0 0 2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+					<p
+						style={{
+							fontSize: 14,
+							fontWeight: 500,
+							color: "var(--text-primary)",
+							margin: "0 0 2px",
+							overflow: "hidden",
+							textOverflow: "ellipsis",
+							whiteSpace: "nowrap",
+						}}
+					>
 						{getNotificationTitle(notif)}
 					</p>
 				)}
 				<p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0, lineHeight: 1.4 }}>{getNotificationDescription(notif)}</p>
-				{notif.type === "workspace_invite" && notif.payload?.inviteToken && (
+				{notif.type === "workspace_invite" && notif.payload?.inviteToken && !notif.isRead && !isInviteResolved && (
 					<button
 						type="button"
 						className="btn btn-sm"
-						onClick={(e) => { e.stopPropagation(); onRead(notif); }}
-						style={{ marginTop: 8, background: "var(--success-muted)", color: "var(--success)", border: "1px solid rgba(52,211,153,0.3)" }}
+						onClick={(e) => {
+							e.stopPropagation();
+							onRead(notif);
+						}}
+						style={{
+							marginTop: 8,
+							background: "var(--success-muted)",
+							color: "var(--success)",
+							border: "1px solid rgba(52,211,153,0.3)",
+						}}
 					>
 						Review invite
 					</button>
@@ -95,12 +162,27 @@ function NotifRow({ notif, onRead, onDelete }) {
 			{hovered && (
 				<button
 					type="button"
-					onClick={(e) => { e.stopPropagation(); onDelete(notif._id); }}
-					style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: "4px 6px", borderRadius: "var(--radius-sm)", fontSize: 14, flexShrink: 0 }}
+					onClick={(e) => {
+						e.stopPropagation();
+						onDelete(notif._id);
+					}}
+					style={{
+						background: "none",
+						border: "none",
+						cursor: "pointer",
+						color: "var(--text-muted)",
+						padding: "4px 6px",
+						borderRadius: "var(--radius-sm)",
+						fontSize: 14,
+						flexShrink: 0,
+					}}
 					aria-label="Delete"
 					title="Delete notification"
 				>
-					<Icon name="close" size={14} />
+					<Icon
+						name="close"
+						size={14}
+					/>
 				</button>
 			)}
 		</div>
@@ -112,21 +194,24 @@ export default function NotificationsPage() {
 	const [unreadCount, setUnreadCount] = useState(0);
 	const [status, setStatus] = useState("loading");
 	const [markingAll, setMarkingAll] = useState(false);
-	const [filter, setFilter] = useState("all"); // "all" | "unread"
+	const [filter, setFilter] = useState("all"); // "all" | "unread" | "read"
 	const navigate = useNavigate();
 
 	useEffect(() => {
 		let active = true;
-		api
-			.get("/notifications?limit=50")
+		api.get("/notifications?limit=50")
 			.then(({ data }) => {
 				if (!active) return;
 				setNotifications(data.notifications);
 				setUnreadCount(data.unreadCount);
 				setStatus("ready");
 			})
-			.catch(() => { if (active) setStatus("error"); });
-		return () => { active = false; };
+			.catch(() => {
+				if (active) setStatus("error");
+			});
+		return () => {
+			active = false;
+		};
 	}, []);
 
 	const markRead = async (notif) => {
@@ -135,11 +220,18 @@ export default function NotificationsPage() {
 				await api.patch(`/notifications/${notif._id}/read`);
 				setNotifications((prev) => prev.map((n) => (n._id === notif._id ? { ...n, isRead: true } : n)));
 				setUnreadCount((c) => Math.max(0, c - 1));
-			} catch {/* ignore */}
+			} catch {
+				/* ignore */
+			}
 		}
+		if (notif.type === "workspace_invite" && (notif.payload?.inviteStatus === "accepted" || !notif.payload?.inviteToken)) return;
 		const { workspaceId, boardId, inviteToken } = notif.payload || {};
 		if (notif.type === "workspace_invite" && inviteToken) {
 			navigate(`/invite/accept?token=${encodeURIComponent(inviteToken)}`);
+			return;
+		}
+		if (notif.type === "chat_mention" && workspaceId) {
+			navigate(`/app/workspaces/${workspaceId}/chat`);
 			return;
 		}
 		if (workspaceId && boardId) navigate(`/app/workspaces/${workspaceId}/boards/${boardId}`);
@@ -151,8 +243,11 @@ export default function NotificationsPage() {
 			await api.patch("/notifications/read-all");
 			setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
 			setUnreadCount(0);
-		} catch {/* ignore */}
-		finally { setMarkingAll(false); }
+		} catch {
+			/* ignore */
+		} finally {
+			setMarkingAll(false);
+		}
 	};
 
 	const deleteNotif = async (notifId) => {
@@ -163,13 +258,19 @@ export default function NotificationsPage() {
 				if (n && !n.isRead) setUnreadCount((c) => Math.max(0, c - 1));
 				return prev.filter((x) => x._id !== notifId);
 			});
-		} catch {/* ignore */}
+		} catch {
+			/* ignore */
+		}
 	};
 
-	const filtered = filter === "unread" ? notifications.filter((n) => !n.isRead) : notifications;
+	const filtered =
+		filter === "unread" ? notifications.filter((n) => !n.isRead) : filter === "read" ? notifications.filter((n) => n.isRead) : notifications;
 
 	return (
-		<div className="fade-in" style={{ maxWidth: 660, margin: "0 auto" }}>
+		<div
+			className="fade-in"
+			style={{ maxWidth: 660, margin: "0 auto" }}
+		>
 			{/* Header */}
 			<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, gap: 12, flexWrap: "wrap" }}>
 				<div>
@@ -181,15 +282,41 @@ export default function NotificationsPage() {
 					)}
 				</div>
 				{unreadCount > 0 && (
-					<button type="button" onClick={markAllRead} disabled={markingAll} className="btn btn-ghost btn-sm">
-						{markingAll ? "Marking..." : <><Icon name="check" size={14} /> Mark all read</>}
+					<button
+						type="button"
+						onClick={markAllRead}
+						disabled={markingAll}
+						className="btn btn-ghost btn-sm"
+					>
+						{markingAll ? (
+							"Marking..."
+						) : (
+							<>
+								<Icon
+									name="check"
+									size={14}
+								/>{" "}
+								Mark all read
+							</>
+						)}
 					</button>
 				)}
 			</div>
 
 			{/* Filter tabs */}
-			<div style={{ display: "flex", gap: 2, background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", padding: 4, marginBottom: 16, width: "fit-content" }}>
-				{["all", "unread"].map((f) => (
+			<div
+				style={{
+					display: "flex",
+					gap: 2,
+					background: "var(--bg-surface)",
+					border: "1px solid var(--border)",
+					borderRadius: "var(--radius-md)",
+					padding: 4,
+					marginBottom: 16,
+					width: "fit-content",
+				}}
+			>
+				{["all", "unread", "read"].map((f) => (
 					<button
 						key={f}
 						type="button"
@@ -207,16 +334,39 @@ export default function NotificationsPage() {
 							textTransform: "capitalize",
 						}}
 					>
-						{f} {f === "unread" && unreadCount > 0 && <span style={{ background: "var(--accent)", color: "#fff", fontSize: 10, padding: "1px 5px", borderRadius: "var(--radius-full)", marginLeft: 4 }}>{unreadCount}</span>}
+						{f}
+						{f === "unread" && unreadCount > 0 && (
+							<span
+								style={{
+									background: "var(--accent)",
+									color: "#fff",
+									fontSize: 10,
+									padding: "1px 5px",
+									borderRadius: "var(--radius-full)",
+									marginLeft: 4,
+								}}
+							>
+								{unreadCount}
+							</span>
+						)}
 					</button>
 				))}
 			</div>
 
 			{/* Card */}
-			<div className="card" style={{ padding: 0, overflow: "hidden" }}>
+			<div
+				className="card"
+				style={{ padding: 0, overflow: "hidden" }}
+			>
 				{status === "loading" && (
 					<div style={{ padding: "32px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
-						{[1, 2, 3].map((i) => <div key={i} className="skeleton" style={{ height: 70, borderRadius: "var(--radius-md)" }} />)}
+						{[1, 2, 3].map((i) => (
+							<div
+								key={i}
+								className="skeleton"
+								style={{ height: 70, borderRadius: "var(--radius-md)" }}
+							/>
+						))}
 					</div>
 				)}
 
@@ -226,19 +376,34 @@ export default function NotificationsPage() {
 
 				{status === "ready" && filtered.length === 0 && (
 					<div style={{ padding: "64px 24px", textAlign: "center" }}>
-						<div className="icon-box icon-box-accent empty-state-icon"><Icon name="bell" size={24} /></div>
+						<div className="icon-box icon-box-accent empty-state-icon">
+							<Icon
+								name="bell"
+								size={24}
+							/>
+						</div>
 						<p style={{ fontSize: 15, fontWeight: 500, color: "var(--text-primary)", marginBottom: 6 }}>
-							{filter === "unread" ? "No unread notifications" : "All caught up!"}
+							{filter === "unread" ? "No unread notifications" : filter === "read" ? "No read notifications" : "All caught up!"}
 						</p>
 						<p style={{ fontSize: 13, color: "var(--text-secondary)" }}>
-							{filter === "unread" ? "You've read everything." : "No notifications yet."}
+							{filter === "unread"
+								? "You've read everything."
+								: filter === "read"
+									? "You haven't viewed any notifications yet."
+									: "No notifications yet."}
 						</p>
 					</div>
 				)}
 
-				{status === "ready" && filtered.map((notif) => (
-					<NotifRow key={notif._id} notif={notif} onRead={markRead} onDelete={deleteNotif} />
-				))}
+				{status === "ready" &&
+					filtered.map((notif) => (
+						<NotifRow
+							key={notif._id}
+							notif={notif}
+							onRead={markRead}
+							onDelete={deleteNotif}
+						/>
+					))}
 			</div>
 		</div>
 	);

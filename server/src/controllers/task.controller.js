@@ -455,6 +455,7 @@ export const addComment = async (req, res, next) => {
 					userName: mentionedUser.name,
 					authorName: req.user.name,
 					taskTitle: task.title,
+					taskUrl: `${process.env.CLIENT_URL}/app/workspaces/${task.workspace}/boards/${task.board}`,
 				});
 			}
 		} catch (queueErr) {

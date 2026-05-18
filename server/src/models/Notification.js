@@ -5,7 +5,7 @@ const notificationSchema = new mongoose.Schema(
 		recipient: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
 		type: {
 			type: String,
-			enum: ["task_assigned", "task_due", "comment_mention", "workspace_invite"],
+			enum: ["task_assigned", "task_due", "comment_mention", "chat_mention", "workspace_invite"],
 			required: true,
 		},
 		payload: { type: mongoose.Schema.Types.Mixed, default: {} },

@@ -6,12 +6,80 @@ import { getSocket } from "../socket";
 import useAuthStore from "../store/authStore";
 
 const WS_COLORS = ["#6C63FF", "#60A5FA", "#34D399", "#F87171", "#FBBF24", "#A78BFA", "#FB923C", "#F472B6"];
-function getInitials(name = "") { return name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2); }
+function getInitials(name = "") {
+	return name
+		.split(" ")
+		.map((w) => w[0])
+		.join("")
+		.toUpperCase()
+		.slice(0, 2);
+}
 function getColor(name = "") {
 	let h = 0;
 	for (const c of name) h = c.charCodeAt(0) + ((h << 5) - h);
 	return WS_COLORS[Math.abs(h) % WS_COLORS.length];
 }
+
+const MENTION_REGEX = /@([a-zA-Z0-9._-]{2,})/g;
+
+const normalizeMention = (value) => value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+
+const getMentionKeys = (user) => {
+	if (!user) return new Set();
+	const keys = new Set();
+	if (user.name) {
+		const normalized = normalizeMention(user.name);
+		if (normalized) keys.add(normalized);
+		const parts = user.name.split(/\s+/).filter(Boolean);
+		const first = normalizeMention(parts[0] || "");
+		const last = normalizeMention(parts[parts.length - 1] || "");
+		if (first) keys.add(first);
+		if (last) keys.add(last);
+	}
+	if (user.email) {
+		const normalizedEmail = normalizeMention(user.email);
+		if (normalizedEmail) keys.add(normalizedEmail);
+		const local = normalizeMention(user.email.split("@")[0] || "");
+		if (local) keys.add(local);
+	}
+	return keys;
+};
+
+const renderMessageContent = (content, currentUser) => {
+	const value = String(content || "");
+	const keys = getMentionKeys(currentUser);
+	const regex = new RegExp(MENTION_REGEX);
+	const parts = [];
+	let lastIndex = 0;
+	let match;
+
+	while ((match = regex.exec(value)) !== null) {
+		const start = match.index;
+		const end = start + match[0].length;
+		if (start > lastIndex) parts.push(value.slice(lastIndex, start));
+		const token = match[1] || "";
+		const isSelf = keys.size > 0 && keys.has(normalizeMention(token));
+		parts.push(
+			<span
+				key={`mention-${start}`}
+				style={{
+					color: isSelf ? "#fff" : "var(--accent)",
+					background: isSelf ? "var(--accent)" : "transparent",
+					padding: isSelf ? "1px 6px" : 0,
+					borderRadius: isSelf ? 6 : 0,
+					fontWeight: 600,
+				}}
+			>
+				{match[0]}
+			</span>,
+		);
+		lastIndex = end;
+	}
+
+	if (!parts.length) return value;
+	if (lastIndex < value.length) parts.push(value.slice(lastIndex));
+	return parts;
+};
 
 const formatTime = (iso) => {
 	const d = new Date(iso);
@@ -32,7 +100,9 @@ function TypingDots({ names }) {
 	return (
 		<div style={{ padding: "4px 16px 8px", display: "flex", alignItems: "center", gap: 8 }}>
 			<div className="typing-dots">
-				<span /><span /><span />
+				<span />
+				<span />
+				<span />
 			</div>
 			<span style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
 				{names.join(", ")} {names.length === 1 ? "is" : "are"} typing
@@ -62,8 +132,7 @@ export default function ChatPage() {
 	useEffect(() => {
 		if (!workspaceId) return;
 		let active = true;
-		api
-			.get(`/workspaces/${workspaceId}/messages?limit=50`)
+		api.get(`/workspaces/${workspaceId}/messages?limit=50`)
 			.then(({ data }) => {
 				if (!active) return;
 				setMessages(data.messages);
@@ -71,8 +140,12 @@ export default function ChatPage() {
 				setNextCursor(data.nextCursor);
 				setStatus("ready");
 			})
-			.catch(() => { if (active) setStatus("error"); });
-		return () => { active = false; };
+			.catch(() => {
+				if (active) setStatus("error");
+			});
+		return () => {
+			active = false;
+		};
 	}, [workspaceId]);
 
 	useEffect(() => {
@@ -97,13 +170,21 @@ export default function ChatPage() {
 		const handleTyping = ({ userId, name, isTyping }) => {
 			if (userId === currentUser?._id) return;
 			setTypingUsers((prev) => {
-				if (!isTyping) { const next = { ...prev }; delete next[userId]; return next; }
+				if (!isTyping) {
+					const next = { ...prev };
+					delete next[userId];
+					return next;
+				}
 				return { ...prev, [userId]: name };
 			});
 			clearTimeout(typingTimers.current[userId]);
 			if (isTyping) {
 				typingTimers.current[userId] = setTimeout(() => {
-					setTypingUsers((prev) => { const next = { ...prev }; delete next[userId]; return next; });
+					setTypingUsers((prev) => {
+						const next = { ...prev };
+						delete next[userId];
+						return next;
+					});
 				}, 3000);
 			}
 		};
@@ -138,7 +219,10 @@ export default function ChatPage() {
 	};
 
 	const handleKeyDown = (e) => {
-		if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
+		if (e.key === "Enter" && !e.shiftKey) {
+			e.preventDefault();
+			handleSend();
+		}
 	};
 
 	const loadMore = async () => {
@@ -149,8 +233,11 @@ export default function ChatPage() {
 			setMessages((prev) => [...data.messages, ...prev]);
 			setHasMore(data.hasMore);
 			setNextCursor(data.nextCursor);
-		} catch {/* ignore */}
-		finally { setLoadingMore(false); }
+		} catch {
+			/* ignore */
+		} finally {
+			setLoadingMore(false);
+		}
 	};
 
 	const typingNames = Object.values(typingUsers);
@@ -179,14 +266,47 @@ export default function ChatPage() {
 			}}
 		>
 			{/* Header */}
-			<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+			<div
+				style={{
+					display: "flex",
+					alignItems: "center",
+					justifyContent: "space-between",
+					padding: "12px 20px",
+					borderBottom: "1px solid var(--border)",
+					flexShrink: 0,
+				}}
+			>
 				<div>
-					<h1 style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
-						<Icon name="chat" size={16} /> Workspace Chat
+					<h1
+						style={{
+							display: "flex",
+							alignItems: "center",
+							gap: 8,
+							fontSize: 15,
+							fontWeight: 600,
+							color: "var(--text-primary)",
+							margin: 0,
+						}}
+					>
+						<Icon
+							name="chat"
+							size={16}
+						/>{" "}
+						Workspace Chat
 					</h1>
 					<p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>All messages visible to workspace members</p>
 				</div>
-				<div style={{ display: "flex", alignItems: "center", gap: 6, background: "var(--success-muted)", border: "1px solid rgba(52,211,153,0.3)", borderRadius: "var(--radius-full)", padding: "3px 10px" }}>
+				<div
+					style={{
+						display: "flex",
+						alignItems: "center",
+						gap: 6,
+						background: "var(--success-muted)",
+						border: "1px solid rgba(52,211,153,0.3)",
+						borderRadius: "var(--radius-full)",
+						padding: "3px 10px",
+					}}
+				>
 					<div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--success)" }} />
 					<span style={{ fontSize: 12, fontWeight: 600, color: "var(--success)" }}>Live</span>
 				</div>
@@ -197,9 +317,18 @@ export default function ChatPage() {
 				{status === "loading" && (
 					<div style={{ display: "flex", flexDirection: "column", gap: 16, paddingTop: 16 }}>
 						{[1, 2, 3].map((i) => (
-							<div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
-								<div className="skeleton" style={{ width: 32, height: 32, borderRadius: "50%", flexShrink: 0 }} />
-								<div className="skeleton" style={{ height: 44, width: `${120 + i * 60}px`, borderRadius: "var(--radius-lg)" }} />
+							<div
+								key={i}
+								style={{ display: "flex", gap: 10, alignItems: "flex-end" }}
+							>
+								<div
+									className="skeleton"
+									style={{ width: 32, height: 32, borderRadius: "50%", flexShrink: 0 }}
+								/>
+								<div
+									className="skeleton"
+									style={{ height: 44, width: `${120 + i * 60}px`, borderRadius: "var(--radius-lg)" }}
+								/>
 							</div>
 						))}
 					</div>
@@ -211,14 +340,35 @@ export default function ChatPage() {
 					<>
 						{hasMore && (
 							<div style={{ textAlign: "center", marginBottom: 16 }}>
-								<button type="button" onClick={loadMore} disabled={loadingMore} className="btn btn-ghost btn-sm" style={{ fontSize: 12 }}>
-									{loadingMore ? <><span className="spinner" style={{ width: 11, height: 11 }} /> Loading...</> : "Load older messages"}
+								<button
+									type="button"
+									onClick={loadMore}
+									disabled={loadingMore}
+									className="btn btn-ghost btn-sm"
+									style={{ fontSize: 12 }}
+								>
+									{loadingMore ? (
+										<>
+											<span
+												className="spinner"
+												style={{ width: 11, height: 11 }}
+											/>{" "}
+											Loading...
+										</>
+									) : (
+										"Load older messages"
+									)}
 								</button>
 							</div>
 						)}
 						{messages.length === 0 && (
 							<div style={{ textAlign: "center", padding: "64px 24px", color: "var(--text-secondary)" }}>
-								<div className="icon-box icon-box-accent empty-state-icon"><Icon name="chat" size={24} /></div>
+								<div className="icon-box icon-box-accent empty-state-icon">
+									<Icon
+										name="chat"
+										size={24}
+									/>
+								</div>
 								<p style={{ fontSize: 15, fontWeight: 500, color: "var(--text-primary)", marginBottom: 6 }}>No messages yet</p>
 								<p style={{ fontSize: 13 }}>Be the first to say hello!</p>
 							</div>
@@ -228,7 +378,17 @@ export default function ChatPage() {
 								{/* Date separator */}
 								<div style={{ display: "flex", alignItems: "center", gap: 12, margin: "16px 0 12px" }}>
 									<div style={{ flex: 1, height: 1, background: "var(--border)" }} />
-									<span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", background: "var(--bg-surface)", padding: "0 8px" }}>{group.date}</span>
+									<span
+										style={{
+											fontSize: 11,
+											fontWeight: 600,
+											color: "var(--text-muted)",
+											background: "var(--bg-surface)",
+											padding: "0 8px",
+										}}
+									>
+										{group.date}
+									</span>
 									<div style={{ flex: 1, height: 1, background: "var(--border)" }} />
 								</div>
 
@@ -238,34 +398,72 @@ export default function ChatPage() {
 									return (
 										<div
 											key={msg._id}
-											style={{ display: "flex", alignItems: "flex-end", gap: 8, marginBottom: 10, flexDirection: isOwn ? "row-reverse" : "row" }}
+											style={{
+												display: "flex",
+												alignItems: "flex-end",
+												gap: 8,
+												marginBottom: 10,
+												flexDirection: isOwn ? "row-reverse" : "row",
+											}}
 										>
 											{/* Avatar */}
-											<div style={{ width: 30, height: 30, borderRadius: "50%", background: msg.sender?.avatar ? "transparent" : avatarColor, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#fff", overflow: "hidden" }}>
+											<div
+												style={{
+													width: 30,
+													height: 30,
+													borderRadius: "50%",
+													background: msg.sender?.avatar ? "transparent" : avatarColor,
+													flexShrink: 0,
+													display: "flex",
+													alignItems: "center",
+													justifyContent: "center",
+													fontSize: 11,
+													fontWeight: 700,
+													color: "#fff",
+													overflow: "hidden",
+												}}
+											>
 												{msg.sender?.avatar ? (
-													<img src={msg.sender.avatar} alt={msg.sender.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-												) : getInitials(msg.sender?.name || "?")}
+													<img
+														src={msg.sender.avatar}
+														alt={msg.sender.name}
+														style={{ width: "100%", height: "100%", objectFit: "cover" }}
+													/>
+												) : (
+													getInitials(msg.sender?.name || "?")
+												)}
 											</div>
 
 											{/* Bubble */}
-											<div style={{ maxWidth: "70%", display: "flex", flexDirection: "column", alignItems: isOwn ? "flex-end" : "flex-start" }}>
+											<div
+												style={{
+													maxWidth: "70%",
+													display: "flex",
+													flexDirection: "column",
+													alignItems: isOwn ? "flex-end" : "flex-start",
+												}}
+											>
 												{!isOwn && (
 													<span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 3 }}>
 														{msg.sender?.name || "Unknown"}
 													</span>
 												)}
-												<div style={{
-													background: isOwn ? "var(--accent)" : "var(--bg-surface-2)",
-													color: isOwn ? "#fff" : "var(--text-primary)",
-													padding: "9px 14px",
-													borderRadius: isOwn ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
-													fontSize: 14,
-													lineHeight: 1.5,
-													wordBreak: "break-word",
-												}}>
-													{msg.content}
+												<div
+													style={{
+														background: isOwn ? "var(--accent)" : "var(--bg-surface-2)",
+														color: isOwn ? "#fff" : "var(--text-primary)",
+														padding: "9px 14px",
+														borderRadius: isOwn ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
+														fontSize: 14,
+														lineHeight: 1.5,
+														wordBreak: "break-word",
+													}}
+												>
+													{renderMessageContent(msg.content, currentUser)}
 												</div>
-												<span style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>{formatTime(msg.createdAt)}</span>
+												<span style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
+													{formatTime(msg.createdAt)}
+												</span>
 											</div>
 										</div>
 									);
@@ -282,9 +480,19 @@ export default function ChatPage() {
 
 			{/* Input */}
 			<div style={{ flexShrink: 0, padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
-				<div style={{ display: "flex", alignItems: "flex-end", gap: 10, background: "var(--bg-surface-2)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: "8px 8px 8px 14px", transition: "border-color 0.15s" }}
-					onFocusCapture={(e) => e.currentTarget.style.borderColor = "var(--border-focus)"}
-					onBlurCapture={(e) => e.currentTarget.style.borderColor = "var(--border)"}
+				<div
+					style={{
+						display: "flex",
+						alignItems: "flex-end",
+						gap: 10,
+						background: "var(--bg-surface-2)",
+						border: "1px solid var(--border)",
+						borderRadius: "var(--radius-lg)",
+						padding: "8px 8px 8px 14px",
+						transition: "border-color 0.15s",
+					}}
+					onFocusCapture={(e) => (e.currentTarget.style.borderColor = "var(--border-focus)")}
+					onBlurCapture={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
 				>
 					<textarea
 						ref={inputRef}
@@ -329,7 +537,10 @@ export default function ChatPage() {
 							flexShrink: 0,
 						}}
 					>
-						<Icon name="send" size={15} />
+						<Icon
+							name="send"
+							size={15}
+						/>
 					</button>
 				</div>
 				<p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6, textAlign: "right" }}>Enter to send / Shift+Enter for newline</p>

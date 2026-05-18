@@ -69,8 +69,7 @@ const createInviteToken = ({ tokenId, workspaceId, email, role, expiresAt }) =>
 
 const decodeInviteToken = (token) => jwt.verify(token, getInviteSecret());
 
-const getWorkspaceRoleMembership = (workspace, userId) =>
-	workspace.members.find((member) => member.user.toString() === userId.toString());
+const getWorkspaceRoleMembership = (workspace, userId) => workspace.members.find((member) => member.user.toString() === userId.toString());
 
 const markInviteAccepted = async (invite, acceptedAt = new Date()) => {
 	invite.status = "accepted";
@@ -113,6 +112,9 @@ const loadInviteFromToken = async (token) => {
 const buildPreviewPayload = ({ invite, decoded, user, currentUser }) => {
 	const currentUserEmail = currentUser?.email?.toLowerCase() || null;
 	const invitedEmail = decoded.email.toLowerCase();
+	const inviterName = invite?.invitedBy?.name || null;
+	const inviterEmail = invite?.invitedBy?.email || null;
+	const workspaceName = invite?.workspace?.name || null;
 
 	return {
 		workspace: invite?.workspace
@@ -122,9 +124,13 @@ const buildPreviewPayload = ({ invite, decoded, user, currentUser }) => {
 					slug: invite.workspace.slug,
 				}
 			: { _id: decoded.workspaceId },
+		workspaceName,
+		workspaceId: invite?.workspace?._id || decoded.workspaceId,
 		email: decoded.email,
 		role: decoded.role,
 		invitedBy: invite?.invitedBy || null,
+		inviterName,
+		inviterEmail,
 		hasAccount: Boolean(user),
 		isLoggedIn: Boolean(currentUser),
 		currentUserEmail,
@@ -365,6 +371,21 @@ export const previewInvite = async (req, res, next) => {
 
 		const { decoded, cachedInvite, invite } = await loadInviteFromToken(token);
 		if (!cachedInvite || !invite) {
+			if (req.user) {
+				const workspace = await Workspace.findById(decoded.workspaceId).select("name slug members");
+				if (workspace) {
+					const isMember = workspace.members?.some((entry) => entry.user.toString() === req.user._id.toString());
+					if (isMember) {
+						return res.status(200).json({
+							status: "accepted",
+							inviteStatus: "accepted",
+							workspace: { _id: workspace._id, name: workspace.name, slug: workspace.slug },
+							workspaceName: workspace.name,
+							isLoggedIn: true,
+						});
+					}
+				}
+			}
 			return res.status(410).json({ message: "Invitation expired or already used" });
 		}
 
@@ -410,6 +431,29 @@ export const acceptInvite = async (req, res, next) => {
 
 		await markInviteAccepted(invite);
 		await redis.del(buildInviteCacheKey(decoded.tokenId));
+
+		try {
+			await Notification.updateMany(
+				{
+					recipient: req.user._id,
+					type: "workspace_invite",
+					"payload.inviteId": invite._id,
+				},
+				{
+					$set: {
+						isRead: true,
+						"payload.inviteStatus": "accepted",
+						"payload.acceptedAt": new Date(),
+					},
+					$unset: {
+						"payload.inviteToken": "",
+						"payload.inviteUrl": "",
+					},
+				},
+			);
+		} catch (notificationErr) {
+			console.error("Notification update error in acceptInvite:", notificationErr.message);
+		}
 
 		return res.status(200).json({
 			message: "Workspace joined successfully",

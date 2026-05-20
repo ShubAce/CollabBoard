@@ -344,8 +344,24 @@ export const getMessages = async (req, res, next) => {
 	try {
 		const limit = Math.min(Math.max(parseInt(req.query.limit || "50", 10), 1), 100);
 		const before = req.query.before || null;
+		const threadId = req.query.threadId || null;
 
-		const filter = { workspace: req.params.workspaceId };
+		let channel = await Channel.findOne({ workspace: req.params.workspaceId, name: "general" });
+		if (!channel) {
+			channel = await Channel.create({
+				workspace: req.params.workspaceId,
+				name: "general",
+				description: "General team discussion",
+				createdBy: req.user._id,
+			});
+		}
+
+		const filter = { workspace: req.params.workspaceId, channel: channel._id };
+		if (threadId) {
+			filter.threadId = threadId;
+		} else {
+			filter.threadId = null;
+		}
 		if (before) filter._id = { $lt: before };
 
 		const messages = await Message.find(filter).sort({ _id: -1 }).limit(limit).populate("sender", "name avatar");

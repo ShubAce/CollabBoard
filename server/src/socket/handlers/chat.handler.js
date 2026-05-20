@@ -1,6 +1,7 @@
 import Message from "../../models/Message.js";
 import Notification from "../../models/Notification.js";
 import Workspace from "../../models/Workspace.js";
+import Channel from "../../models/Channel.js";
 import emailQueue from "../../queues/emailQueue.js";
 
 const MENTION_REGEX = /@([a-zA-Z0-9._-]{2,})/g;
@@ -56,18 +57,38 @@ const resolveMentionTargets = (tokens, members) => {
 };
 
 export const registerChatHandlers = (io, socket) => {
-	socket.on("chat:send", async ({ workspaceId, content }) => {
+	socket.on("chat:send", async ({ workspaceId, content, threadId }) => {
 		if (!workspaceId || !content?.trim()) return;
 
 		let populated;
 		try {
+			let channel = await Channel.findOne({ workspace: workspaceId, name: "general" });
+			if (!channel) {
+				channel = await Channel.create({
+					workspace: workspaceId,
+					name: "general",
+					description: "General team discussion",
+					createdBy: socket.userId,
+				});
+			}
+
 			// Persist message to MongoDB
 			const message = await Message.create({
 				workspace: workspaceId,
+				channel: channel._id,
 				sender: socket.userId,
 				content,
 				type: "text",
+				threadId: threadId || null,
 			});
+
+			// If it's a thread reply, update parent message
+			if (threadId) {
+				await Message.findByIdAndUpdate(threadId, {
+					$inc: { threadCount: 1 },
+					lastReplyAt: new Date(),
+				});
+			}
 
 			populated = await message.populate("sender", "name avatar");
 
@@ -125,5 +146,74 @@ export const registerChatHandlers = (io, socket) => {
 			name: socket.user.name,
 			isTyping,
 		});
+	});
+
+	socket.on("chat:edit", async ({ workspaceId, messageId, content }) => {
+		if (!workspaceId || !messageId || !content?.trim()) return;
+		try {
+			const message = await Message.findOneAndUpdate(
+				{ _id: messageId, workspace: workspaceId, sender: socket.userId },
+				{ content, editedAt: new Date() },
+				{ new: true }
+			).populate("sender", "name avatar");
+			
+			if (message) {
+				io.to(`ws:${workspaceId}`).emit("chat:edited", { message });
+			}
+		} catch (err) {
+			console.error("Chat edit error:", err.message);
+		}
+	});
+
+	socket.on("chat:delete", async ({ workspaceId, messageId }) => {
+		if (!workspaceId || !messageId) return;
+		try {
+			// Find and mark as deleted
+			const message = await Message.findOneAndUpdate(
+				{ _id: messageId, workspace: workspaceId, sender: socket.userId },
+				{ isDeleted: true, deletedAt: new Date(), deletedBy: socket.userId, content: "This message was deleted." },
+				{ new: true }
+			);
+			
+			if (message) {
+				io.to(`ws:${workspaceId}`).emit("chat:deleted", { messageId });
+			}
+		} catch (err) {
+			console.error("Chat delete error:", err.message);
+		}
+	});
+
+	socket.on("chat:react", async ({ workspaceId, messageId, emoji }) => {
+		if (!workspaceId || !messageId || !emoji) return;
+		try {
+			const message = await Message.findOne({ _id: messageId, workspace: workspaceId });
+			if (!message) return;
+
+			const uid = socket.userId;
+			const reactions = [...(message.reactions || [])];
+			const idx = reactions.findIndex((r) => r.emoji === emoji);
+
+			if (idx >= 0) {
+				const users = reactions[idx].users || [];
+				if (users.includes(uid)) {
+					// Remove reaction
+					reactions[idx].users = users.filter((u) => u.toString() !== uid.toString());
+					if (!reactions[idx].users.length) reactions.splice(idx, 1);
+				} else {
+					// Add reaction
+					reactions[idx].users.push(uid);
+				}
+			} else {
+				// New emoji reaction
+				reactions.push({ emoji, users: [uid] });
+			}
+
+			message.reactions = reactions;
+			await message.save();
+
+			io.to(`ws:${workspaceId}`).emit("chat:reaction_updated", { messageId, reactions: message.reactions });
+		} catch (err) {
+			console.error("Chat reaction error:", err.message);
+		}
 	});
 };

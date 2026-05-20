@@ -262,10 +262,13 @@ function ThreadPanel({ parentMsg, currentUser, onClose }) {
 
 	useEffect(() => {
 		if (!parentMsg) return;
-		// Load thread replies — using a client-side filter for now
-		// In production this would be GET /messages?threadId=parentMsg._id
-		setReplies([]);
-	}, [parentMsg?._id]);
+		api.get(`/workspaces/${workspaceId}/messages?threadId=${parentMsg._id}&limit=100`)
+			.then((res) => {
+				setReplies(res.data.messages);
+				setTimeout(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+			})
+			.catch((err) => console.error("Failed to load thread replies:", err));
+	}, [parentMsg?._id, workspaceId]);
 
 	const send = () => {
 		const content = input.trim();

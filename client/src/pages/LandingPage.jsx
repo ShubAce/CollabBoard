@@ -35,7 +35,7 @@ export default function LandingPage() {
 						<Icon name="spark" size={24} style={{ color: "var(--accent)" }} />
 						<span style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.03em" }}>CollabBoard</span>
 					</div>
-					<div style={{ display: "none", alignItems: "center", gap: 24, "@media (minWidth: 768px)": { display: "flex" } }} className="desktop-nav">
+					<div className="desktop-nav">
 						{["Features", "Pricing", "Resources", "Docs"].map(link => (
 							<a key={link} href={`#${link.toLowerCase()}`} style={{ fontSize: 14, fontWeight: 500, color: "var(--text-secondary)", textDecoration: "none", transition: "color 0.2s" }} onMouseEnter={e => e.target.style.color = "var(--text-primary)"} onMouseLeave={e => e.target.style.color = "var(--text-secondary)"}>{link}</a>
 						))}
@@ -199,7 +199,7 @@ export default function LandingPage() {
 					</div>
 				</div>
 				<div style={{ maxWidth: 1100, margin: "0 auto", padding: "0 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16, borderTop: "1px solid var(--border-subtle)", paddingTop: 32 }}>
-					<p style={{ fontSize: 14, color: "var(--text-muted)", margin: 0 }}>© 2025 CollabBoard. Built with MERN.</p>
+					<p style={{ fontSize: 14, color: "var(--text-muted)", margin: 0 }}>© {new Date().getFullYear()} CollabBoard. Built with MERN.</p>
 					<div style={{ display: "flex", gap: 16 }}>
 						<Icon name="github" size={20} style={{ color: "var(--text-muted)" }} />
 						<Icon name="twitter" size={20} style={{ color: "var(--text-muted)" }} />

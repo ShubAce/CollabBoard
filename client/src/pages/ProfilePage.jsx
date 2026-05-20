@@ -430,7 +430,7 @@ export default function ProfilePage() {
 						))}
 					</SectionCard>
 
-					<SectionCard title="Language &amp; Region" subtitle="Date, time, and locale settings">
+					<SectionCard title="Language & Region" subtitle="Date, time, and locale settings">
 						<div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
 							<div>
 								<label style={{ display: "block", fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 6 }}>Date format</label>

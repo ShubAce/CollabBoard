@@ -555,6 +555,34 @@
 		background-position: center center;
 	}
 
+	/* ── Select dark-mode styling ─────────────────────────────────────────── */
+	select.input {
+		appearance: none;
+		-webkit-appearance: none;
+		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238892b0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+		background-repeat: no-repeat;
+		background-position: right 10px center;
+		padding-right: 32px;
+		cursor: pointer;
+		color-scheme: dark;
+	}
+	select.input option {
+		background: var(--bg-surface-2);
+		color: var(--text-primary);
+	}
+
+	/* ── Landing page desktop nav ────────────────────────────────────────── */
+	.desktop-nav {
+		display: none;
+		align-items: center;
+		gap: 24px;
+	}
+	@media (min-width: 768px) {
+		.desktop-nav {
+			display: flex;
+		}
+	}
+
 	/* Priority colors */
 	.priority-urgent {
 		color: var(--priority-urgent);
@@ -2146,29 +2174,7 @@
 	display: none;
 }
 
-/* ── Animations ─────────────────────────────────────────────────────── */
-@keyframes bellBounce {
-	0%, 100% { transform: rotate(0deg); }
-	20% { transform: rotate(15deg); }
-	40% { transform: rotate(-10deg); }
-	60% { transform: rotate(5deg); }
-	80% { transform: rotate(-5deg); }
-}
-
-.bell-bounce {
-	animation: bellBounce 0.5s var(--ease-out);
-	transform-origin: top center;
-}
-
-@keyframes cardEnter {
-	0% { opacity: 0; transform: translateY(16px) scale(0.98); }
-	100% { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-.card-enter {
-	animation: cardEnter var(--duration-normal) var(--ease-out) forwards;
-}
-
+/* ── Animations (non-duplicates) ─────────────────────────────────────── */
 @keyframes toastProgress {
 	0% { transform: scaleX(1); }
 	100% { transform: scaleX(0); }

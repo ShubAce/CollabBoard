@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { z } from "zod";
 import ActivityLog from "../models/ActivityLog.js";
 import Board from "../models/Board.js";
+import Channel from "../models/Channel.js";
 import Comment from "../models/Comment.js";
 import Message from "../models/Message.js";
 import Task from "../models/Task.js";
@@ -50,6 +51,30 @@ const buildUniqueSlug = async (name) => {
 	return slug;
 };
 
+const createDefaultChannels = async (workspaceId, userId) => {
+	const channels = [
+		{
+			workspace: workspaceId,
+			name: "general",
+			description: "General team discussion",
+			isPrivate: false,
+			isArchived: false,
+			isReadOnly: false,
+			createdBy: userId,
+		},
+		{
+			workspace: workspaceId,
+			name: "announcements",
+			description: "Announcements for the workspace",
+			isPrivate: false,
+			isArchived: false,
+			isReadOnly: true,
+			createdBy: userId,
+		},
+	];
+	await Channel.insertMany(channels);
+};
+
 const loadWorkspace = async (req) => {
 	if (req.workspace) return req.workspace;
 	return Workspace.findById(req.params.workspaceId);
@@ -65,9 +90,7 @@ const attachViewerMeta = (workspace, userId) => {
 	return {
 		...doc,
 		currentUserRole: member?.role || null,
-		isOwner: doc.owner?._id?.toString
-			? doc.owner._id.toString() === userId.toString()
-			: doc.owner?.toString() === userId.toString(),
+		isOwner: doc.owner?._id?.toString ? doc.owner._id.toString() === userId.toString() : doc.owner?.toString() === userId.toString(),
 	};
 };
 
@@ -88,6 +111,8 @@ export const createWorkspace = async (req, res, next) => {
 			owner: req.user._id,
 			members: [{ user: req.user._id, role: "owner", joinedAt: new Date() }],
 		});
+
+		await createDefaultChannels(workspace._id, req.user._id);
 
 		await workspace.populate("owner", "name email avatar");
 		return res.status(201).json(attachViewerMeta(workspace, req.user._id));
@@ -170,6 +195,7 @@ export const deleteWorkspace = async (req, res, next) => {
 			Comment.deleteMany({ task: { $in: taskIds } }),
 			Task.deleteMany({ workspace: workspace._id }),
 			Board.deleteMany({ workspace: workspace._id }),
+			Channel.deleteMany({ workspace: workspace._id }),
 			Message.deleteMany({ workspace: workspace._id }),
 			ActivityLog.deleteMany({ workspace: workspace._id }),
 			WhiteboardSnapshot.deleteMany({ board: { $in: boardIds } }),
@@ -322,10 +348,7 @@ export const getMessages = async (req, res, next) => {
 		const filter = { workspace: req.params.workspaceId };
 		if (before) filter._id = { $lt: before };
 
-		const messages = await Message.find(filter)
-			.sort({ _id: -1 })
-			.limit(limit)
-			.populate("sender", "name avatar");
+		const messages = await Message.find(filter).sort({ _id: -1 }).limit(limit).populate("sender", "name avatar");
 
 		return res.status(200).json({
 			messages: messages.reverse(),

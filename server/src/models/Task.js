@@ -9,6 +9,24 @@ const attachmentSchema = new mongoose.Schema(
 	{ _id: false },
 );
 
+const subTaskSchema = new mongoose.Schema(
+	{
+		title: { type: String, required: true, trim: true },
+		isDone: { type: Boolean, default: false },
+		order: { type: Number, default: 0 },
+		createdAt: { type: Date, default: Date.now },
+	},
+	{ _id: true },
+);
+
+const dependencySchema = new mongoose.Schema(
+	{
+		blockedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "Task" }],
+		blocking: [{ type: mongoose.Schema.Types.ObjectId, ref: "Task" }],
+	},
+	{ _id: false },
+);
+
 const taskSchema = new mongoose.Schema(
 	{
 		board: { type: mongoose.Schema.Types.ObjectId, ref: "Board", required: true },
@@ -31,7 +49,9 @@ const taskSchema = new mongoose.Schema(
 		labels: [{ type: String }],
 		dueDate: { type: Date },
 		attachments: { type: [attachmentSchema], default: [] },
+		subTasks: { type: [subTaskSchema], default: [] },
 		comments: [{ type: mongoose.Schema.Types.ObjectId, ref: "Comment" }],
+		dependencies: { type: dependencySchema, default: () => ({ blockedBy: [], blocking: [] }) },
 		createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
 	},
 	{ timestamps: true },

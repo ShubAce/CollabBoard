@@ -42,6 +42,21 @@ const commentSchema = z.object({
 	mentions: z.array(z.string()).optional(),
 });
 
+const subTaskCreateSchema = z.object({
+	title: z.string().trim().min(1, "Title is required"),
+});
+
+const subTaskUpdateSchema = z.object({
+	title: z.string().trim().min(1).optional(),
+	isDone: z.boolean().optional(),
+	order: z.number().int().nonnegative().optional(),
+});
+
+const dependencySchema = z.object({
+	type: z.enum(["blockedBy", "blocking"]),
+	taskId: z.string().min(1, "Task id is required"),
+});
+
 const parseDueDate = (value) => {
 	if (!value) return undefined;
 	const date = new Date(value);
@@ -77,6 +92,23 @@ const emitToBoard = (req, boardId, event, payload) => {
 		io.to(`board:${boardId}`).emit(event, payload);
 	}
 };
+
+const emitTaskUpdate = (req, taskId, boardId, changes) => {
+	emitToBoard(req, boardId, "task:updated", { taskId, changes });
+};
+
+const normalizeSubTaskOrder = (task) => {
+	task.subTasks.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+	task.subTasks.forEach((subTask, index) => {
+		subTask.order = index;
+	});
+};
+
+const addUniqueId = (list, value) => {
+	if (!list.some((id) => id.toString() === value.toString())) list.push(value);
+};
+
+const removeId = (list, value) => list.filter((id) => id.toString() !== value.toString());
 
 const invalidateBoardCache = async (boardId) => {
 	try {
@@ -478,6 +510,197 @@ export const listComments = async (req, res, next) => {
 		const comments = await Comment.find({ task: task._id }).populate("author", "name avatar email").sort({ createdAt: 1 });
 
 		return res.status(200).json(comments);
+	} catch (err) {
+		return next(err);
+	}
+};
+
+export const addSubTask = async (req, res, next) => {
+	try {
+		const parsed = subTaskCreateSchema.safeParse(req.body);
+		if (!parsed.success) {
+			return res.status(400).json({ message: "Validation error", errors: parsed.error.flatten() });
+		}
+
+		const task = await ensureTask(req.params.workspaceId, req.params.boardId, req.params.taskId);
+		if (!task) {
+			return res.status(404).json({ message: "Task not found" });
+		}
+
+		const nextOrder = task.subTasks.length ? Math.max(...task.subTasks.map((subTask) => subTask.order ?? 0)) + 1 : 0;
+		task.subTasks.push({ title: parsed.data.title, order: nextOrder });
+		normalizeSubTaskOrder(task);
+		await task.save();
+
+		await invalidateBoardCache(task.board);
+		emitTaskUpdate(req, task._id, task.board, { subTasks: task.subTasks });
+
+		return res.status(201).json({ taskId: task._id, subTasks: task.subTasks });
+	} catch (err) {
+		return next(err);
+	}
+};
+
+export const updateSubTask = async (req, res, next) => {
+	try {
+		const parsed = subTaskUpdateSchema.safeParse(req.body);
+		if (!parsed.success) {
+			return res.status(400).json({ message: "Validation error", errors: parsed.error.flatten() });
+		}
+
+		const task = await ensureTask(req.params.workspaceId, req.params.boardId, req.params.taskId);
+		if (!task) {
+			return res.status(404).json({ message: "Task not found" });
+		}
+
+		const subTask = task.subTasks.id(req.params.subTaskId);
+		if (!subTask) {
+			return res.status(404).json({ message: "Sub-task not found" });
+		}
+
+		if (parsed.data.title !== undefined) subTask.title = parsed.data.title;
+		if (parsed.data.isDone !== undefined) subTask.isDone = parsed.data.isDone;
+		if (parsed.data.order !== undefined) subTask.order = parsed.data.order;
+		normalizeSubTaskOrder(task);
+		await task.save();
+
+		await invalidateBoardCache(task.board);
+		emitTaskUpdate(req, task._id, task.board, { subTasks: task.subTasks });
+
+		return res.status(200).json({ taskId: task._id, subTasks: task.subTasks });
+	} catch (err) {
+		return next(err);
+	}
+};
+
+export const deleteSubTask = async (req, res, next) => {
+	try {
+		const task = await ensureTask(req.params.workspaceId, req.params.boardId, req.params.taskId);
+		if (!task) {
+			return res.status(404).json({ message: "Task not found" });
+		}
+
+		const subTask = task.subTasks.id(req.params.subTaskId);
+		if (!subTask) {
+			return res.status(404).json({ message: "Sub-task not found" });
+		}
+
+		subTask.deleteOne();
+		normalizeSubTaskOrder(task);
+		await task.save();
+
+		await invalidateBoardCache(task.board);
+		emitTaskUpdate(req, task._id, task.board, { subTasks: task.subTasks });
+
+		return res.status(200).json({ taskId: task._id, subTasks: task.subTasks });
+	} catch (err) {
+		return next(err);
+	}
+};
+
+export const addDependency = async (req, res, next) => {
+	try {
+		const parsed = dependencySchema.safeParse(req.body);
+		if (!parsed.success) {
+			return res.status(400).json({ message: "Validation error", errors: parsed.error.flatten() });
+		}
+
+		const task = await ensureTask(req.params.workspaceId, req.params.boardId, req.params.taskId);
+		if (!task) {
+			return res.status(404).json({ message: "Task not found" });
+		}
+
+		if (task._id.toString() === parsed.data.taskId) {
+			return res.status(400).json({ message: "Cannot relate a task to itself" });
+		}
+
+		const relatedTask = await Task.findOne({
+			_id: parsed.data.taskId,
+			workspace: req.params.workspaceId,
+		});
+		if (!relatedTask) {
+			return res.status(404).json({ message: "Related task not found" });
+		}
+
+		task.dependencies = task.dependencies || { blockedBy: [], blocking: [] };
+		relatedTask.dependencies = relatedTask.dependencies || { blockedBy: [], blocking: [] };
+
+		const isBlockedBy = parsed.data.type === "blockedBy";
+		const primaryField = isBlockedBy ? "blockedBy" : "blocking";
+		const relatedField = isBlockedBy ? "blocking" : "blockedBy";
+
+		addUniqueId(task.dependencies[primaryField], relatedTask._id);
+		addUniqueId(relatedTask.dependencies[relatedField], task._id);
+
+		await Promise.all([task.save(), relatedTask.save()]);
+		await invalidateBoardCache(task.board);
+		if (task.board.toString() !== relatedTask.board.toString()) {
+			await invalidateBoardCache(relatedTask.board);
+		}
+
+		emitTaskUpdate(req, task._id, task.board, { dependencies: task.dependencies });
+		if (task.board.toString() !== relatedTask.board.toString()) {
+			emitTaskUpdate(req, relatedTask._id, relatedTask.board, { dependencies: relatedTask.dependencies });
+		} else {
+			emitTaskUpdate(req, relatedTask._id, task.board, { dependencies: relatedTask.dependencies });
+		}
+
+		return res.status(200).json({
+			task: { _id: task._id, dependencies: task.dependencies },
+			relatedTask: { _id: relatedTask._id, dependencies: relatedTask.dependencies, board: relatedTask.board },
+		});
+	} catch (err) {
+		return next(err);
+	}
+};
+
+export const removeDependency = async (req, res, next) => {
+	try {
+		const parsed = dependencySchema.safeParse(req.body);
+		if (!parsed.success) {
+			return res.status(400).json({ message: "Validation error", errors: parsed.error.flatten() });
+		}
+
+		const task = await ensureTask(req.params.workspaceId, req.params.boardId, req.params.taskId);
+		if (!task) {
+			return res.status(404).json({ message: "Task not found" });
+		}
+
+		const relatedTask = await Task.findOne({
+			_id: parsed.data.taskId,
+			workspace: req.params.workspaceId,
+		});
+		if (!relatedTask) {
+			return res.status(404).json({ message: "Related task not found" });
+		}
+
+		task.dependencies = task.dependencies || { blockedBy: [], blocking: [] };
+		relatedTask.dependencies = relatedTask.dependencies || { blockedBy: [], blocking: [] };
+
+		const isBlockedBy = parsed.data.type === "blockedBy";
+		const primaryField = isBlockedBy ? "blockedBy" : "blocking";
+		const relatedField = isBlockedBy ? "blocking" : "blockedBy";
+
+		task.dependencies[primaryField] = removeId(task.dependencies[primaryField], relatedTask._id);
+		relatedTask.dependencies[relatedField] = removeId(relatedTask.dependencies[relatedField], task._id);
+
+		await Promise.all([task.save(), relatedTask.save()]);
+		await invalidateBoardCache(task.board);
+		if (task.board.toString() !== relatedTask.board.toString()) {
+			await invalidateBoardCache(relatedTask.board);
+		}
+
+		emitTaskUpdate(req, task._id, task.board, { dependencies: task.dependencies });
+		if (task.board.toString() !== relatedTask.board.toString()) {
+			emitTaskUpdate(req, relatedTask._id, relatedTask.board, { dependencies: relatedTask.dependencies });
+		} else {
+			emitTaskUpdate(req, relatedTask._id, task.board, { dependencies: relatedTask.dependencies });
+		}
+
+		return res.status(200).json({
+			task: { _id: task._id, dependencies: task.dependencies },
+			relatedTask: { _id: relatedTask._id, dependencies: relatedTask.dependencies, board: relatedTask.board },
+		});
 	} catch (err) {
 		return next(err);
 	}

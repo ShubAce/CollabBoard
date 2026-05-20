@@ -4,6 +4,7 @@ import api, { refreshSession } from "./api/axios";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
 import AppShell from "./pages/AppShell.jsx";
 import AuthCallbackPage from "./pages/AuthCallbackPage.jsx";
+import ActivityLogPage from "./pages/ActivityLogPage.jsx";
 import BoardList from "./pages/BoardList.jsx";
 import BoardPage from "./pages/BoardPage.jsx";
 import ChatPage from "./pages/ChatPage.jsx";
@@ -11,6 +12,7 @@ import CreateWorkspace from "./pages/CreateWorkspace.jsx";
 import InviteAcceptPage from "./pages/InviteAcceptPage.jsx";
 import LandingPage from "./pages/LandingPage.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
+import MyWorkPage from "./pages/MyWorkPage.jsx";
 import NotFoundPage from "./pages/NotFoundPage.jsx";
 import NotificationsPage from "./pages/NotificationsPage.jsx";
 import ProfilePage from "./pages/ProfilePage.jsx";
@@ -128,12 +130,20 @@ function App() {
 							element={<BoardPage />}
 						/>
 						<Route
+							path="workspaces/:workspaceId/activity"
+							element={<ActivityLogPage />}
+						/>
+						<Route
 							path="workspaces/:workspaceId/chat"
 							element={<ChatPage />}
 						/>
 						<Route
 							path="workspaces/:workspaceId/settings"
 							element={<WorkspaceSettings />}
+						/>
+						<Route
+							path="my-work"
+							element={<MyWorkPage />}
 						/>
 						<Route
 							path="notifications"

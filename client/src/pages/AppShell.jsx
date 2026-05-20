@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Link, NavLink, Outlet, useMatch, useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, NavLink, Outlet, useLocation, useMatch, useNavigate } from "react-router-dom";
 import api from "../api/axios";
 import Icon from "../components/ui/Icon.jsx";
 import { getSocket } from "../socket";
@@ -8,14 +8,14 @@ import useAuthStore from "../store/authStore";
 function getInitials(name = "") {
 	return name
 		.split(" ")
-		.map((w) => w[0])
+		.map((word) => word[0])
 		.join("")
 		.toUpperCase()
 		.slice(0, 2);
 }
 
 function getAvatarColor(name = "") {
-	const colors = ["#6C63FF", "#34D399", "#60A5FA", "#F87171", "#FBBF24", "#A78BFA", "#FB923C"];
+	const colors = ["#7c72ff", "#3dd68c", "#60a5fa", "#ff6b6b", "#f0c040", "#a78bfa", "#ff8c42"];
 	let hash = 0;
 	for (const ch of name) hash = ch.charCodeAt(0) + ((hash << 5) - hash);
 	return colors[Math.abs(hash) % colors.length];
@@ -25,16 +25,40 @@ function Avatar({ user, size = "sm" }) {
 	const bg = getAvatarColor(user?.name || "");
 	const initials = getInitials(user?.name || "?");
 	return user?.avatar ? (
-		<img src={user.avatar} alt={user.name} className={`avatar avatar-${size}`} />
+		<img
+			src={user.avatar}
+			alt={user.name}
+			className={`avatar avatar-${size}`}
+		/>
 	) : (
-		<div className={`avatar avatar-${size}`} style={{ background: bg }}>
+		<div
+			className={`avatar avatar-${size}`}
+			style={{ background: bg }}
+		>
 			{initials}
 		</div>
 	);
 }
 
+const DEFAULT_SECTIONS = {
+	main: true,
+	boards: true,
+	channels: true,
+	dms: true,
+};
+
+const STATUS_OPTIONS = [
+	{ id: "available", label: "Available", emoji: "🟢", color: "var(--green)" },
+	{ id: "busy", label: "Busy", emoji: "🔴", color: "var(--red)" },
+	{ id: "meeting", label: "In a meeting", emoji: "🗓", color: "var(--yellow)" },
+	{ id: "focus", label: "Focusing — do not disturb", emoji: "🎧", color: "var(--blue)" },
+	{ id: "vacation", label: "On vacation", emoji: "🌴", color: "var(--purple)" },
+	{ id: "wfh", label: "Working from home", emoji: "🏠", color: "var(--accent)" },
+];
+
 export default function AppShell() {
 	const navigate = useNavigate();
+	const location = useLocation();
 	const wsMatch = useMatch("/app/workspaces/:workspaceId/*");
 	const workspaceId = wsMatch?.params?.workspaceId || null;
 	const user = useAuthStore((s) => s.user);
@@ -43,47 +67,172 @@ export default function AppShell() {
 
 	const [unreadCount, setUnreadCount] = useState(0);
 	const [workspace, setWorkspace] = useState(null);
+	const [workspaces, setWorkspaces] = useState([]);
+	const [boards, setBoards] = useState([]);
+	const [fallbackWorkspaceId, setFallbackWorkspaceId] = useState(null);
 	const [sidebarOpen, setSidebarOpen] = useState(false);
 	const [userMenuOpen, setUserMenuOpen] = useState(false);
-	const userMenuRef = useRef(null);
+	const [switcherOpen, setSwitcherOpen] = useState(false);
+	const [statusMenuOpen, setStatusMenuOpen] = useState(false);
+	const [bellOpen, setBellOpen] = useState(false);
+	const [commandOpen, setCommandOpen] = useState(false);
+	const [commandQuery, setCommandQuery] = useState("");
+	const [sections, setSections] = useState(DEFAULT_SECTIONS);
+	const [status, setStatus] = useState(STATUS_OPTIONS[0]);
 
-	// Fetch initial unread count
+	const userMenuRef = useRef(null);
+	const switcherRef = useRef(null);
+	const statusRef = useRef(null);
+	const bellRef = useRef(null);
+	const commandInputRef = useRef(null);
+	const activeWorkspaceId = workspaceId || fallbackWorkspaceId;
+
+	useEffect(() => {
+		try {
+			const stored = localStorage.getItem("cb:last_workspace");
+			if (stored) setFallbackWorkspaceId(stored);
+		} catch {
+			/* ignore */
+		}
+	}, []);
+
+	useEffect(() => {
+		if (!workspaceId) return;
+		try {
+			localStorage.setItem("cb:last_workspace", workspaceId);
+			setFallbackWorkspaceId(workspaceId);
+		} catch {
+			/* ignore */
+		}
+	}, [workspaceId]);
+
+	useEffect(() => {
+		try {
+			const stored = localStorage.getItem("cb:sidebar_sections");
+			if (stored) {
+				const parsed = JSON.parse(stored);
+				setSections((prev) => ({ ...prev, ...parsed }));
+			}
+		} catch {
+			/* ignore */
+		}
+	}, []);
+
+	useEffect(() => {
+		try {
+			localStorage.setItem("cb:sidebar_sections", JSON.stringify(sections));
+		} catch {
+			/* ignore */
+		}
+	}, [sections]);
+
 	useEffect(() => {
 		if (!accessToken) return;
 		let active = true;
-		api
-			.get("/notifications?unreadOnly=true&limit=1")
-			.then(({ data }) => { if (active) setUnreadCount(data.unreadCount || 0); })
+		api.get("/workspaces")
+			.then(({ data }) => {
+				if (active) setWorkspaces(Array.isArray(data) ? data : []);
+			})
 			.catch(() => {});
-		return () => { active = false; };
+		return () => {
+			active = false;
+		};
 	}, [accessToken]);
 
-	// Fetch current workspace info
 	useEffect(() => {
-		if (!workspaceId || !accessToken) return;
+		if (!activeWorkspaceId || !accessToken) {
+			setWorkspace(null);
+			setBoards([]);
+			return;
+		}
 		let active = true;
-		api
-			.get(`/workspaces/${workspaceId}`)
-			.then(({ data }) => { if (active) setWorkspace(data); })
-			.catch(() => {});
-		return () => { active = false; };
-	}, [workspaceId, accessToken]);
+		api.get(`/workspaces/${activeWorkspaceId}`)
+			.then(({ data }) => {
+				if (active) setWorkspace(data);
+			})
+			.catch(() => {
+				if (!workspaceId) {
+					setWorkspace(null);
+					setFallbackWorkspaceId(null);
+					try {
+						localStorage.removeItem("cb:last_workspace");
+					} catch {
+						/* ignore */
+					}
+				}
+			});
+		api.get(`/workspaces/${activeWorkspaceId}/boards`)
+			.then(({ data }) => {
+				if (active) setBoards(Array.isArray(data) ? data : []);
+			})
+			.catch(() => {
+				if (active) setBoards([]);
+			});
+		return () => {
+			active = false;
+		};
+	}, [activeWorkspaceId, accessToken, workspaceId]);
 
-	// Socket: new notifications
+	useEffect(() => {
+		if (!accessToken) return;
+		let active = true;
+		api.get("/notifications?unreadOnly=true&limit=1")
+			.then(({ data }) => {
+				if (active) setUnreadCount(data.unreadCount || 0);
+			})
+			.catch(() => {});
+		return () => {
+			active = false;
+		};
+	}, [accessToken]);
+
 	useEffect(() => {
 		if (!accessToken) return;
 		const socket = getSocket(accessToken);
 		if (!socket) return;
-		const handle = () => setUnreadCount((c) => c + 1);
+		const handle = () => setUnreadCount((count) => count + 1);
 		socket.on("notification:new", handle);
 		return () => socket.off("notification:new", handle);
 	}, [accessToken]);
 
-	// Close user menu on outside click
 	useEffect(() => {
-		const handle = (e) => {
-			if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
+		const handleKey = (event) => {
+			const key = event.key?.toLowerCase();
+			if ((event.ctrlKey || event.metaKey) && key === "k") {
+				event.preventDefault();
+				setCommandOpen(true);
+				return;
+			}
+			if (key === "escape") {
+				setCommandOpen(false);
+				setBellOpen(false);
 				setUserMenuOpen(false);
+				setStatusMenuOpen(false);
+				setSwitcherOpen(false);
+			}
+		};
+		window.addEventListener("keydown", handleKey);
+		return () => window.removeEventListener("keydown", handleKey);
+	}, []);
+
+	useEffect(() => {
+		if (!commandOpen) return;
+		setCommandQuery("");
+		const id = window.setTimeout(() => {
+			commandInputRef.current?.focus();
+		}, 0);
+		return () => window.clearTimeout(id);
+	}, [commandOpen]);
+
+	useEffect(() => {
+		const handle = (event) => {
+			const refs = [userMenuRef, switcherRef, statusRef, bellRef];
+			const clickedInside = refs.some((ref) => ref.current && ref.current.contains(event.target));
+			if (!clickedInside) {
+				setUserMenuOpen(false);
+				setSwitcherOpen(false);
+				setStatusMenuOpen(false);
+				setBellOpen(false);
 			}
 		};
 		document.addEventListener("mousedown", handle);
@@ -91,250 +240,746 @@ export default function AppShell() {
 	}, []);
 
 	const handleLogout = async () => {
-		try { await api.post("/auth/logout"); } finally {
+		try {
+			await api.post("/auth/logout");
+		} finally {
 			clearAuth();
 			navigate("/login");
 		}
 	};
 
-	const navLinks = workspaceId
+	const toggleSection = (key) => {
+		setSections((prev) => ({ ...prev, [key]: !prev[key] }));
+	};
+
+	const pageLabel = useMemo(() => {
+		const path = location.pathname;
+		if (path.includes("/boards/") && path.includes("/boards")) return "Board";
+		if (path.includes("/boards")) return "Boards";
+		if (path.includes("/chat")) return "Chat";
+		if (path.includes("/settings")) return "Settings";
+		if (path.includes("/notifications")) return "Notifications";
+		if (path.includes("/profile")) return "Profile";
+		if (path.includes("/my-work")) return "My Work";
+		if (path.includes("/activity")) return "Activity";
+		if (path === "/app/workspaces") return "Workspaces";
+		if (path.includes("/workspaces/") && activeWorkspaceId) return "Home";
+		return "Home";
+	}, [location.pathname, activeWorkspaceId]);
+
+	const mainItems = activeWorkspaceId
 		? [
-				{ to: `/app/workspaces/${workspaceId}`, icon: "home", label: "Dashboard" },
-				{ to: `/app/workspaces/${workspaceId}/boards`, icon: "board", label: "Boards" },
-				{ to: `/app/workspaces/${workspaceId}/chat`, icon: "chat", label: "Chat" },
-				{ to: `/app/workspaces/${workspaceId}/settings`, icon: "settings", label: "Settings" },
-		  ]
+				{
+					key: "home",
+					label: "Home",
+					icon: "home",
+					to: `/app/workspaces/${activeWorkspaceId}`,
+				},
+				{
+					key: "search",
+					label: "Search",
+					icon: "search",
+					onClick: () => setCommandOpen(true),
+				},
+				{
+					key: "my-work",
+					label: "My Work",
+					icon: "briefcase",
+					to: "/app/my-work",
+				},
+				{
+					key: "notifications",
+					label: "Notifications",
+					icon: "bell",
+					to: "/app/notifications",
+					badge: unreadCount,
+				},
+			]
 		: [];
 
-	const globalLinks = [
-		{ to: "/app/workspaces", icon: "briefcase", label: "Workspaces" },
-		{ to: "/app/notifications", icon: "bell", label: "Notifications", badge: unreadCount },
-		{ to: "/app/profile", icon: "user", label: "Profile" },
-	];
+	const channelItems = activeWorkspaceId
+		? [
+				{ key: "general", label: "general", to: `/app/workspaces/${activeWorkspaceId}/chat` },
+				{ key: "announcements", label: "announcements", to: `/app/workspaces/${activeWorkspaceId}/chat` },
+			]
+		: [];
+
+	const dmItems = workspace?.members
+		? workspace.members
+				.map((member) => member.user)
+				.filter((member) => member && member._id !== user?._id)
+				.slice(0, 3)
+		: [];
+
+	const workspaceDotColor = workspace?.color || getAvatarColor(workspace?.name || "");
+	const showSidebar = sidebarOpen || window.innerWidth > 767;
 
 	return (
 		<div className="app-layout">
-			{/* ── SIDEBAR ── */}
-			<aside className="sidebar" style={{ display: sidebarOpen || window.innerWidth > 767 ? undefined : "none" }}>
-				{/* Logo */}
-				<Link
-					to="/app/workspaces"
-					style={{
-						display: "flex",
-						alignItems: "center",
-						gap: 10,
-						padding: "18px 16px",
-						textDecoration: "none",
-						borderBottom: `1px solid var(--border)`,
-					}}
+			<aside
+				className="sidebar"
+				style={{ display: showSidebar ? "flex" : "none" }}
+			>
+				<div
+					className="sidebar-switcher"
+					ref={switcherRef}
 				>
-					<Icon name="spark" size={20} style={{ color: "var(--accent)" }} />
-					<span style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)" }}>CollabBoard</span>
-				</Link>
+					<button
+						type="button"
+						className="workspace-switcher"
+						onClick={() => setSwitcherOpen((open) => !open)}
+					>
+						<span
+							style={{
+								width: 16,
+								height: 16,
+								borderRadius: "var(--r-sm)",
+								background: workspaceDotColor,
+								flexShrink: 0,
+							}}
+						/>
+						<span style={{ flex: 1, textAlign: "left", fontWeight: 600 }}>{workspace?.name || "Select workspace"}</span>
+						<Icon
+							name="chevronDown"
+							size={14}
+						/>
+					</button>
 
-				{/* Workspace header */}
-				{workspace && (
-					<div style={{ padding: "12px 16px 8px", borderBottom: `1px solid var(--border)` }}>
-						<p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{workspace.name}</p>
-						<p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>{workspace.members?.length || 0} members</p>
-					</div>
-				)}
-
-				{/* Workspace nav links */}
-				{navLinks.length > 0 && (
-					<nav style={{ paddingTop: 8 }}>
-						{navLinks.map(({ to, icon, label }) => (
-							<NavLink
-								key={to}
-								to={to}
-								end={to === `/app/workspaces/${workspaceId}`}
-								className={({ isActive }) => `nav-item${isActive ? " active" : ""}`}
-							>
-								<Icon name={icon} size={16} />
-								<span>{label}</span>
-							</NavLink>
-						))}
-					</nav>
-				)}
-
-				<div className="divider" style={{ margin: "8px 0" }} />
-
-				{/* Global nav */}
-				<nav>
-					<div className="section-label">Navigation</div>
-					{globalLinks.map(({ to, icon, label, badge }) => (
-						<NavLink
-							key={to}
-							to={to}
-							className={({ isActive }) => `nav-item${isActive ? " active" : ""}`}
+					{switcherOpen && (
+						<div
+							className="dropdown"
+							style={{ top: "calc(100% + 8px)", left: 12, right: 12 }}
 						>
-							<Icon name={icon} size={16} />
-							<span style={{ flex: 1 }}>{label}</span>
-							{badge > 0 && (
-								<span
-									style={{
-										background: "var(--accent)",
-										color: "#fff",
-										fontSize: 11,
-										fontWeight: 600,
-										padding: "1px 6px",
-										borderRadius: "var(--radius-full)",
+							{workspaces.map((ws, index) => (
+								<button
+									key={ws._id}
+									type="button"
+									className="dropdown-item"
+									onClick={() => {
+										setSwitcherOpen(false);
+										navigate(`/app/workspaces/${ws._id}`);
 									}}
+									style={{ justifyContent: "space-between" }}
 								>
-									{badge > 99 ? "99+" : badge}
-								</span>
-							)}
-						</NavLink>
-					))}
-				</nav>
+									<span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+										<span
+											style={{
+												width: 14,
+												height: 14,
+												borderRadius: "var(--r-sm)",
+												background: ws.color || getAvatarColor(ws.name || String(index)),
+											}}
+										/>
+										{ws.name}
+									</span>
+									{activeWorkspaceId === ws._id && (
+										<Icon
+											name="check"
+											size={14}
+										/>
+									)}
+								</button>
+							))}
+							<div style={{ height: 1, background: "var(--border-subtle)", margin: "4px 0" }} />
+							<Link
+								to="/app/workspaces"
+								className="dropdown-item"
+								onClick={() => setSwitcherOpen(false)}
+							>
+								Browse all workspaces
+							</Link>
+							<Link
+								to="/app/workspaces/new"
+								className="dropdown-item"
+								onClick={() => setSwitcherOpen(false)}
+							>
+								Create new workspace
+							</Link>
+						</div>
+					)}
+				</div>
 
-				{/* Footer: user */}
-				<div style={{ marginTop: "auto", borderTop: `1px solid var(--border)`, padding: 16 }}>
-					<div ref={userMenuRef} style={{ position: "relative" }}>
+				<div className="sidebar-body">
+					{activeWorkspaceId && (
+						<div className="sidebar-section">
+							<div className="sidebar-section-header">
+								<button
+									type="button"
+									className="section-toggle"
+									onClick={() => toggleSection("main")}
+								>
+									<Icon
+										name="chevronDown"
+										size={12}
+										style={{
+											transform: sections.main ? "rotate(0deg)" : "rotate(-90deg)",
+											transition: "transform var(--duration-fast) var(--ease-out)",
+										}}
+									/>
+									Main
+								</button>
+							</div>
+							<div className={`sidebar-items${sections.main ? "" : " collapsed"}`}>
+								{mainItems.map((item) => {
+									if (item.to) {
+										return (
+											<NavLink
+												key={item.key}
+												to={item.to}
+												className={({ isActive }) => `sidebar-link${isActive ? " active" : ""}`}
+											>
+												<Icon
+													name={item.icon}
+													size={14}
+												/>
+												<span style={{ flex: 1 }}>{item.label}</span>
+												{item.badge > 0 && (
+													<span
+														className="badge badge-accent"
+														style={{ fontWeight: 600 }}
+													>
+														{item.badge > 99 ? "99+" : item.badge}
+													</span>
+												)}
+											</NavLink>
+										);
+									}
+									return (
+										<button
+											key={item.key}
+											type="button"
+											className={`sidebar-link${item.disabled ? " disabled" : ""}`}
+											onClick={item.disabled ? undefined : item.onClick}
+											aria-disabled={item.disabled}
+										>
+											<Icon
+												name={item.icon}
+												size={14}
+											/>
+											<span style={{ flex: 1 }}>{item.label}</span>
+										</button>
+									);
+								})}
+							</div>
+						</div>
+					)}
+
+					{activeWorkspaceId && (
+						<div className="sidebar-section">
+							<div className="sidebar-section-header">
+								<button
+									type="button"
+									className="section-toggle"
+									onClick={() => toggleSection("boards")}
+								>
+									<Icon
+										name="chevronDown"
+										size={12}
+										style={{
+											transform: sections.boards ? "rotate(0deg)" : "rotate(-90deg)",
+											transition: "transform var(--duration-fast) var(--ease-out)",
+										}}
+									/>
+									Boards
+								</button>
+								<div className="sidebar-section-actions">
+									<button
+										type="button"
+										className="sidebar-link"
+										onClick={() => navigate(`/app/workspaces/${activeWorkspaceId}/boards`)}
+										style={{ padding: "2px 6px" }}
+										aria-label="Open boards"
+									>
+										<Icon
+											name="plus"
+											size={12}
+										/>
+									</button>
+								</div>
+							</div>
+							<div className={`sidebar-items${sections.boards ? "" : " collapsed"}`}>
+								{boards.length === 0 && (
+									<button
+										type="button"
+										className="sidebar-link disabled"
+										aria-disabled
+									>
+										<Icon
+											name="board"
+											size={14}
+										/>
+										No boards yet
+									</button>
+								)}
+								{boards.map((board) => (
+									<NavLink
+										key={board._id}
+										to={`/app/workspaces/${activeWorkspaceId}/boards/${board._id}`}
+										className={({ isActive }) => `sidebar-link${isActive ? " active" : ""}`}
+									>
+										<Icon
+											name="board"
+											size={14}
+										/>
+										<span style={{ flex: 1 }}>{board.name}</span>
+									</NavLink>
+								))}
+							</div>
+						</div>
+					)}
+
+					{activeWorkspaceId && (
+						<div className="sidebar-section">
+							<div className="sidebar-section-header">
+								<button
+									type="button"
+									className="section-toggle"
+									onClick={() => toggleSection("channels")}
+								>
+									<Icon
+										name="chevronDown"
+										size={12}
+										style={{
+											transform: sections.channels ? "rotate(0deg)" : "rotate(-90deg)",
+											transition: "transform var(--duration-fast) var(--ease-out)",
+										}}
+									/>
+									Channels
+								</button>
+							</div>
+							<div className={`sidebar-items${sections.channels ? "" : " collapsed"}`}>
+								{channelItems.map((channel) => (
+									<NavLink
+										key={channel.key}
+										to={channel.to}
+										className={({ isActive }) => `sidebar-link${isActive ? " active" : ""}`}
+									>
+										<span style={{ color: "var(--text-muted)" }}>#</span>
+										<span style={{ flex: 1 }}>{channel.label}</span>
+										{channel.key === "announcements" && <span className="badge badge-muted">Read-only</span>}
+									</NavLink>
+								))}
+							</div>
+						</div>
+					)}
+
+					{activeWorkspaceId && (
+						<div className="sidebar-section">
+							<div className="sidebar-section-header">
+								<button
+									type="button"
+									className="section-toggle"
+									onClick={() => toggleSection("dms")}
+								>
+									<Icon
+										name="chevronDown"
+										size={12}
+										style={{
+											transform: sections.dms ? "rotate(0deg)" : "rotate(-90deg)",
+											transition: "transform var(--duration-fast) var(--ease-out)",
+										}}
+									/>
+									Direct Messages
+								</button>
+							</div>
+							<div className={`sidebar-items${sections.dms ? "" : " collapsed"}`}>
+								{dmItems.length === 0 && (
+									<button
+										type="button"
+										className="sidebar-link disabled"
+										aria-disabled
+									>
+										<Icon
+											name="user"
+											size={14}
+										/>
+										No direct messages
+									</button>
+								)}
+								{dmItems.map((member) => (
+									<button
+										key={member._id}
+										type="button"
+										className="sidebar-link disabled"
+										aria-disabled
+									>
+										<Avatar
+											user={member}
+											size="xs"
+										/>
+										<span style={{ flex: 1 }}>{member.name}</span>
+									</button>
+								))}
+							</div>
+						</div>
+					)}
+				</div>
+
+				<div className="sidebar-footer">
+					<div
+						ref={statusRef}
+						style={{ display: "flex", flexDirection: "column", gap: 8 }}
+					>
+						<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+							<div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+								<Avatar
+									user={user}
+									size="sm"
+								/>
+								<div style={{ minWidth: 0 }}>
+									<p
+										style={{
+											margin: 0,
+											fontSize: 13,
+											fontWeight: 600,
+											color: "var(--text-primary)",
+											overflow: "hidden",
+											textOverflow: "ellipsis",
+											whiteSpace: "nowrap",
+										}}
+									>
+										{user?.name || "User"}
+									</p>
+									<p
+										style={{
+											margin: 0,
+											fontSize: 11,
+											color: "var(--text-muted)",
+											overflow: "hidden",
+											textOverflow: "ellipsis",
+											whiteSpace: "nowrap",
+										}}
+									>
+										{user?.email || ""}
+									</p>
+								</div>
+							</div>
+							<Link
+								to="/app/profile"
+								className="sidebar-link"
+								style={{ padding: "4px 6px" }}
+								aria-label="Open profile"
+							>
+								<Icon
+									name="settings"
+									size={14}
+								/>
+							</Link>
+						</div>
 						<button
 							type="button"
-							onClick={() => setUserMenuOpen((o) => !o)}
-							style={{
-								display: "flex",
-								alignItems: "center",
-								gap: 10,
-								width: "100%",
-								background: "none",
-								border: "none",
-								cursor: "pointer",
-								padding: 0,
-								textAlign: "left",
-							}}
+							className="status-chip"
+							onClick={() => setStatusMenuOpen((open) => !open)}
 						>
-							<Avatar user={user} size="sm" />
-							<div style={{ minWidth: 0 }}>
-								<p style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-									{user?.name || "User"}
-								</p>
-								<p style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-									{user?.email || ""}
-								</p>
-							</div>
+							<span style={{ fontSize: 12 }}>{status.emoji}</span>
+							<span style={{ flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 130 }}>{status.label}</span>
+							<Icon
+								name="chevronDown"
+								size={12}
+							/>
 						</button>
+						{statusMenuOpen && (
+						<div
+							className="dropdown"
+							style={{ bottom: "calc(100% + 8px)", left: 0, right: 0 }}
+						>
+							<div style={{ padding: "8px 12px 4px", fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Set a status</div>
+							{STATUS_OPTIONS.map((option) => (
+								<button
+									key={option.id}
+									type="button"
+									className={`dropdown-item${status.id === option.id ? " active" : ""}`}
+									onClick={() => {
+										setStatus(option);
+										setStatusMenuOpen(false);
+									}}
+								>
+									<span style={{ fontSize: 14 }}>{option.emoji}</span>
+									<span>{option.label}</span>
+									{status.id === option.id && <Icon name="check" size={12} style={{ marginLeft: "auto", color: "var(--accent)" }} />}
+								</button>
+							))}
+						</div>
+					)}
+					</div>
+				</div>
+			</aside>
 
+			<div className="main-area">
+				<header className="topbar">
+					<button
+						type="button"
+						onClick={() => setSidebarOpen((open) => !open)}
+						className="btn btn-ghost btn-sm"
+						style={{ display: "none" }}
+					>
+						<Icon
+							name="menu"
+							size={16}
+						/>
+					</button>
+
+					<div className="topbar-group">
+						<button
+							type="button"
+							className="btn btn-ghost btn-sm"
+							onClick={() => navigate(-1)}
+							aria-label="Go back"
+						>
+							<Icon
+								name="arrowLeft"
+								size={14}
+							/>
+						</button>
+						<button
+							type="button"
+							className="btn btn-ghost btn-sm"
+							onClick={() => navigate(1)}
+							aria-label="Go forward"
+						>
+							<Icon
+								name="arrowRight"
+								size={14}
+							/>
+						</button>
+					</div>
+
+					<div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-secondary)" }}>
+						{activeWorkspaceId ? (
+							<>
+								<Link
+									to="/app/workspaces"
+									style={{ color: "var(--text-secondary)", textDecoration: "none" }}
+								>
+									Workspaces
+								</Link>
+								<span>/</span>
+								<Link
+									to={`/app/workspaces/${activeWorkspaceId}`}
+									style={{ color: "var(--text-primary)", fontWeight: 600, textDecoration: "none" }}
+								>
+									{workspace?.name || "Workspace"}
+								</Link>
+								<span>/</span>
+								<span style={{ color: "var(--text-primary)", fontWeight: 600 }}>{pageLabel}</span>
+							</>
+						) : (
+							<span style={{ color: "var(--text-primary)", fontWeight: 600 }}>CollabBoard</span>
+						)}
+					</div>
+
+					<button
+						type="button"
+						className="topbar-search"
+						onClick={() => setCommandOpen(true)}
+					>
+						<Icon
+							name="search"
+							size={14}
+						/>
+						<span style={{ flex: 1, textAlign: "left" }}>Search</span>
+						<span className="command-kbd">Ctrl+K</span>
+					</button>
+
+					<div
+						className="topbar-group"
+						ref={bellRef}
+					>
+						<button
+							type="button"
+							className="btn btn-ghost btn-sm"
+							onClick={() => setBellOpen((open) => !open)}
+							aria-label="Notifications"
+						>
+							<Icon
+								name="bell"
+								size={16}
+							/>
+							{unreadCount > 0 && (
+								<span
+									className="badge badge-accent"
+									style={{ marginLeft: 6 }}
+								>
+									{unreadCount > 99 ? "99+" : unreadCount}
+								</span>
+							)}
+						</button>
+						{bellOpen && (
+							<div
+								className="dropdown"
+								style={{ right: 0, top: "calc(100% + 8px)", minWidth: 220 }}
+							>
+								<div style={{ padding: "10px 12px", fontSize: 12, color: "var(--text-muted)" }}>
+									{unreadCount > 0 ? `${unreadCount} unread notifications` : "No new notifications"}
+								</div>
+								<Link
+									to="/app/notifications"
+									className="dropdown-item"
+									onClick={() => setBellOpen(false)}
+								>
+									View all notifications
+								</Link>
+							</div>
+						)}
+					</div>
+
+					<div
+						className="topbar-group"
+						ref={userMenuRef}
+					>
+						<button
+							type="button"
+							className="btn btn-ghost btn-sm"
+							onClick={() => setUserMenuOpen((open) => !open)}
+							style={{ gap: 8 }}
+						>
+							<Avatar
+								user={user}
+								size="xs"
+							/>
+							<Icon
+								name="chevronDown"
+								size={12}
+							/>
+						</button>
 						{userMenuOpen && (
 							<div
 								className="dropdown"
-								style={{ bottom: "calc(100% + 8px)", left: 0, right: 0 }}
+								style={{ right: 0, top: "calc(100% + 8px)", minWidth: 240 }}
 							>
+								{/* User info header */}
+								<div style={{ padding: "14px 16px", borderBottom: "1px solid var(--border-subtle)" }}>
+									<div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+										<Avatar user={user} size="md" />
+										<div style={{ minWidth: 0 }}>
+											<p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user?.name || "User"}</p>
+											<p style={{ margin: "2px 0 0", fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user?.email || ""}</p>
+										</div>
+									</div>
+									<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+										<span className="status-chip" style={{ fontSize: 11 }}>
+											<span style={{ width: 6, height: 6, borderRadius: "50%", background: status.color }} />
+											{status.emoji} {status.label}
+										</span>
+										<button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11, padding: "0 8px", minHeight: 22 }}
+											onClick={() => { setUserMenuOpen(false); setStatusMenuOpen(true); }}
+										>Change status ▸</button>
+									</div>
+								</div>
+								{/* Main links */}
 								<Link
 									to="/app/profile"
 									className="dropdown-item"
 									onClick={() => setUserMenuOpen(false)}
 								>
-									<Icon name="user" size={14} /> Profile
+									<Icon name="user" size={14} />
+									<span style={{ flex: 1 }}>Profile &amp; account</span>
 								</Link>
-								<div style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />
+								<Link
+									to="/app/profile"
+									className="dropdown-item"
+									onClick={() => setUserMenuOpen(false)}
+								>
+									<Icon name="settings" size={14} />
+									<span style={{ flex: 1 }}>Preferences</span>
+								</Link>
+								<button
+									type="button"
+									className="dropdown-item"
+									onClick={() => setUserMenuOpen(false)}
+								>
+									<Icon name="keyboard" size={14} />
+									<span style={{ flex: 1 }}>Keyboard shortcuts</span>
+									<span className="command-kbd" style={{ fontSize: 10 }}>Ctrl+/</span>
+								</button>
+								<div style={{ height: 1, background: "var(--border-subtle)", margin: "4px 0" }} />
+								<button type="button" className="dropdown-item" onClick={() => setUserMenuOpen(false)}>
+									<Icon name="spark" size={14} />
+									<span style={{ flex: 1 }}>What&apos;s new</span>
+								</button>
+								<button type="button" className="dropdown-item" onClick={() => setUserMenuOpen(false)}>
+									<Icon name="alert" size={14} />
+									<span style={{ flex: 1 }}>Help &amp; support</span>
+								</button>
+								<div style={{ height: 1, background: "var(--border-subtle)", margin: "4px 0" }} />
 								<button
 									type="button"
 									className="dropdown-item danger"
 									onClick={handleLogout}
-									style={{ width: "100%", textAlign: "left" }}
 								>
-									<Icon name="logOut" size={14} /> Log out
+									<Icon name="close" size={14} />
+									<span>Sign out everywhere</span>
 								</button>
 							</div>
 						)}
 					</div>
-				</div>
-			</aside>
-
-			{/* ── MAIN AREA ── */}
-			<div className="main-area">
-				{/* Top Bar */}
-				<header className="topbar">
-					{/* Mobile hamburger */}
-					<button
-						type="button"
-						onClick={() => setSidebarOpen((o) => !o)}
-						style={{
-							background: "none",
-							border: "none",
-							color: "var(--text-secondary)",
-							cursor: "pointer",
-							fontSize: 20,
-							display: "none",
-							padding: 4,
-						}}
-						className="mobile-menu-btn"
-					>
-						<Icon name="menu" size={18} />
-					</button>
-
-					{/* Breadcrumb */}
-					<div style={{ flex: 1, display: "flex", alignItems: "center", gap: 6, fontSize: 14, color: "var(--text-secondary)", overflow: "hidden" }}>
-						{workspace ? (
-							<>
-								<Link to="/app/workspaces" style={{ color: "var(--text-secondary)", textDecoration: "none" }}>
-									Workspaces
-								</Link>
-								<span>/</span>
-								<Link to={`/app/workspaces/${workspaceId}`} style={{ color: "var(--text-primary)", fontWeight: 500, textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-									{workspace.name}
-								</Link>
-							</>
-						) : (
-							<span style={{ color: "var(--text-primary)", fontWeight: 500 }}>CollabBoard</span>
-						)}
-					</div>
-
-					{/* Notification bell */}
-					<Link
-						to="/app/notifications"
-						aria-label="Notifications"
-						style={{
-							position: "relative",
-							display: "flex",
-							alignItems: "center",
-							justifyContent: "center",
-							width: 36,
-							height: 36,
-							borderRadius: "var(--radius-md)",
-							background: "var(--bg-surface-2)",
-							border: "1px solid var(--border)",
-							color: "var(--text-secondary)",
-							textDecoration: "none",
-							fontSize: 16,
-							flexShrink: 0,
-						}}
-					>
-						<Icon name="bell" size={16} />
-						{unreadCount > 0 && (
-							<span
-								style={{
-									position: "absolute",
-									top: -4,
-									right: -4,
-									background: "var(--accent)",
-									color: "#fff",
-									fontSize: 10,
-									fontWeight: 700,
-									padding: "1px 5px",
-									borderRadius: "var(--radius-full)",
-									lineHeight: 1.4,
-								}}
-							>
-								{unreadCount > 99 ? "99+" : unreadCount}
-							</span>
-						)}
-					</Link>
-
-					{/* User avatar */}
-					<Link to="/app/profile" style={{ textDecoration: "none" }}>
-						<Avatar user={user} size="sm" />
-					</Link>
 				</header>
 
-				{/* Page content */}
 				<main className="content-area fade-in">
 					<Outlet />
 				</main>
 			</div>
+
+			{commandOpen && (
+				<div
+					className="command-overlay"
+					onClick={(event) => {
+						if (event.target === event.currentTarget) setCommandOpen(false);
+					}}
+				>
+					<div className="command-palette">
+						<div className="command-input">
+							<Icon
+								name="search"
+								size={16}
+							/>
+							<input
+								ref={commandInputRef}
+								value={commandQuery}
+								onChange={(event) => setCommandQuery(event.target.value)}
+								placeholder="Search or run a command"
+							/>
+							<span className="command-kbd">Esc</span>
+						</div>
+						<div className="command-section">
+							<div className="command-section-title">Quick actions</div>
+							<button
+								type="button"
+								className="command-item"
+								onClick={() => {
+									setCommandOpen(false);
+									if (activeWorkspaceId) navigate(`/app/workspaces/${activeWorkspaceId}/boards`);
+								}}
+							>
+								<span>Create new board</span>
+								<span className="command-kbd">B</span>
+							</button>
+							<button
+								type="button"
+								className="command-item"
+								onClick={() => {
+									setCommandOpen(false);
+									navigate("/app/notifications");
+								}}
+							>
+								<span>Open notifications</span>
+								<span className="command-kbd">N</span>
+							</button>
+							<button
+								type="button"
+								className="command-item"
+								onClick={() => {
+									setCommandOpen(false);
+									navigate("/app/profile");
+								}}
+							>
+								<span>Open profile</span>
+								<span className="command-kbd">P</span>
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }

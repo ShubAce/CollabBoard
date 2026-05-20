@@ -2,10 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import api from "../api/axios";
 import Icon from "../components/ui/Icon.jsx";
+import { useToast } from "../hooks/useToast.jsx";
 import { getSocket } from "../socket";
 import useAuthStore from "../store/authStore";
 
+/* ── helpers ─────────────────────────────────────────────────── */
 const WS_COLORS = ["#6C63FF", "#60A5FA", "#34D399", "#F87171", "#FBBF24", "#A78BFA", "#FB923C", "#F472B6"];
+
 function getInitials(name = "") {
 	return name
 		.split(" ")
@@ -14,6 +17,7 @@ function getInitials(name = "") {
 		.toUpperCase()
 		.slice(0, 2);
 }
+
 function getColor(name = "") {
 	let h = 0;
 	for (const c of name) h = c.charCodeAt(0) + ((h << 5) - h);
@@ -21,52 +25,43 @@ function getColor(name = "") {
 }
 
 const MENTION_REGEX = /@([a-zA-Z0-9._-]{2,})/g;
-
-const normalizeMention = (value) => value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+const normalizeMention = (v) => v.toLowerCase().replace(/[^a-z0-9]+/g, "");
 
 const getMentionKeys = (user) => {
 	if (!user) return new Set();
 	const keys = new Set();
 	if (user.name) {
-		const normalized = normalizeMention(user.name);
-		if (normalized) keys.add(normalized);
 		const parts = user.name.split(/\s+/).filter(Boolean);
-		const first = normalizeMention(parts[0] || "");
-		const last = normalizeMention(parts[parts.length - 1] || "");
-		if (first) keys.add(first);
-		if (last) keys.add(last);
+		keys.add(normalizeMention(user.name));
+		parts.forEach((p) => keys.add(normalizeMention(p)));
 	}
 	if (user.email) {
-		const normalizedEmail = normalizeMention(user.email);
-		if (normalizedEmail) keys.add(normalizedEmail);
-		const local = normalizeMention(user.email.split("@")[0] || "");
-		if (local) keys.add(local);
+		keys.add(normalizeMention(user.email));
+		keys.add(normalizeMention(user.email.split("@")[0] || ""));
 	}
 	return keys;
 };
 
-const renderMessageContent = (content, currentUser) => {
+function renderContent(content, currentUser) {
 	const value = String(content || "");
 	const keys = getMentionKeys(currentUser);
 	const regex = new RegExp(MENTION_REGEX);
 	const parts = [];
 	let lastIndex = 0;
 	let match;
-
 	while ((match = regex.exec(value)) !== null) {
 		const start = match.index;
 		const end = start + match[0].length;
 		if (start > lastIndex) parts.push(value.slice(lastIndex, start));
-		const token = match[1] || "";
-		const isSelf = keys.size > 0 && keys.has(normalizeMention(token));
+		const isSelf = keys.size > 0 && keys.has(normalizeMention(match[1] || ""));
 		parts.push(
 			<span
-				key={`mention-${start}`}
+				key={`m-${start}`}
 				style={{
 					color: isSelf ? "#fff" : "var(--accent)",
 					background: isSelf ? "var(--accent)" : "transparent",
-					padding: isSelf ? "1px 6px" : 0,
-					borderRadius: isSelf ? 6 : 0,
+					padding: isSelf ? "1px 5px" : 0,
+					borderRadius: isSelf ? 4 : 0,
 					fontWeight: 600,
 				}}
 			>
@@ -75,46 +70,304 @@ const renderMessageContent = (content, currentUser) => {
 		);
 		lastIndex = end;
 	}
-
 	if (!parts.length) return value;
 	if (lastIndex < value.length) parts.push(value.slice(lastIndex));
 	return parts;
-};
+}
 
-const formatTime = (iso) => {
-	const d = new Date(iso);
-	return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-};
-const formatDate = (iso) => {
+const fmtTime = (iso) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+const fmtDate = (iso) => {
 	const d = new Date(iso);
 	const today = new Date();
 	if (d.toDateString() === today.toDateString()) return "Today";
-	const yesterday = new Date(today);
-	yesterday.setDate(today.getDate() - 1);
-	if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
-	return d.toLocaleDateString([], { month: "short", day: "numeric" });
+	const yest = new Date(today);
+	yest.setDate(today.getDate() - 1);
+	if (d.toDateString() === yest.toDateString()) return "Yesterday";
+	return d.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
 };
 
+const QUICK_EMOJIS = ["👍", "✅", "🔥", "👀", "🎉", "💯", "❤️", "🤔", "😄", "🚀"];
+
+function isSameMinute(a, b) {
+	const da = new Date(a);
+	const db = new Date(b);
+	return da.getFullYear() === db.getFullYear() && da.getMonth() === db.getMonth() && da.getDate() === db.getDate() && da.getHours() === db.getHours() && da.getMinutes() === db.getMinutes();
+}
+
+/* ── Avatar ───────────────────────────────────────────────────── */
+function MsgAvatar({ sender, visible }) {
+	if (!visible) return <div className="chat-msg-avatar-placeholder" />;
+	return sender?.avatar ? (
+		<img src={sender.avatar} alt={sender.name} className="chat-msg-avatar" style={{ objectFit: "cover" }} />
+	) : (
+		<div className="chat-msg-avatar" style={{ background: getColor(sender?.name || "") }}>
+			{getInitials(sender?.name || "?")}
+		</div>
+	);
+}
+
+/* ── Reaction pill ────────────────────────────────────────────── */
+function Reactions({ reactions = [], currentUserId, onReact }) {
+	if (!reactions.length) return null;
+	return (
+		<div className="chat-reactions">
+			{reactions.map((r) => {
+				const isMine = r.users?.includes(currentUserId);
+				return (
+					<button
+						key={r.emoji}
+						type="button"
+						className={`chat-reaction${isMine ? " mine" : ""}`}
+						onClick={() => onReact(r.emoji)}
+						title={isMine ? "Remove reaction" : "Add reaction"}
+					>
+						<span>{r.emoji}</span>
+						<span className="chat-reaction-count">{r.users?.length || 0}</span>
+					</button>
+				);
+			})}
+		</div>
+	);
+}
+
+/* ── Emoji picker ─────────────────────────────────────────────── */
+function EmojiPicker({ onPick, onClose }) {
+	const ref = useRef(null);
+	useEffect(() => {
+		const h = (e) => {
+			if (ref.current && !ref.current.contains(e.target)) onClose();
+		};
+		document.addEventListener("mousedown", h);
+		return () => document.removeEventListener("mousedown", h);
+	}, [onClose]);
+
+	return (
+		<div ref={ref} className="emoji-picker-popup">
+			<div className="emoji-picker-row">
+				{QUICK_EMOJIS.map((em) => (
+					<button key={em} type="button" className="emoji-btn" onClick={() => onPick(em)}>
+						{em}
+					</button>
+				))}
+			</div>
+		</div>
+	);
+}
+
+/* ── Message row ──────────────────────────────────────────────── */
+function MessageRow({ msg, prevMsg, currentUser, onReact, onReply, onDelete, threadCount }) {
+	const [emojiOpen, setEmojiOpen] = useState(false);
+	const isOwn = msg.sender?._id === currentUser?._id;
+	const showHeader = !prevMsg || prevMsg.sender?._id !== msg.sender?._id || !isSameMinute(prevMsg.createdAt, msg.createdAt);
+	const isOnlyEmoji = /^\p{Emoji}+$/u.test((msg.content || "").trim()) && (msg.content || "").trim().length <= 4;
+
+	return (
+		<div className={`chat-msg-group${showHeader ? " first-in-group" : ""}`}>
+			<MsgAvatar sender={msg.sender} visible={showHeader} />
+
+			<div className="chat-msg-body">
+				{showHeader && (
+					<div className="chat-msg-meta">
+						<span className="chat-msg-author">{msg.sender?.name || "Unknown"}</span>
+						<span className="chat-msg-time">{fmtTime(msg.createdAt)}</span>
+					</div>
+				)}
+				<p className={`chat-msg-text${isOnlyEmoji ? " only-emoji" : ""}`}>
+					{renderContent(msg.content, currentUser)}
+				</p>
+
+				<Reactions
+					reactions={msg.reactions || []}
+					currentUserId={currentUser?._id}
+					onReact={(emoji) => onReact(msg._id, emoji)}
+				/>
+
+				{threadCount > 0 && (
+					<button type="button" className="chat-thread-bar" onClick={() => onReply(msg)}>
+						<span style={{ fontSize: 12, color: "var(--accent)" }}>💬</span>
+						<span>
+							{threadCount} {threadCount === 1 ? "reply" : "replies"}
+						</span>
+					</button>
+				)}
+			</div>
+
+			{/* Hover action bar */}
+			<div className="chat-msg-actions">
+				<div style={{ position: "relative" }}>
+					<button type="button" className="chat-action-btn" title="Add reaction" onClick={() => setEmojiOpen((o) => !o)}>
+						😊
+					</button>
+					{emojiOpen && (
+						<EmojiPicker
+							onPick={(em) => {
+								onReact(msg._id, em);
+								setEmojiOpen(false);
+							}}
+							onClose={() => setEmojiOpen(false)}
+						/>
+					)}
+				</div>
+				<button type="button" className="chat-action-btn" title="Reply in thread" onClick={() => onReply(msg)}>
+					<Icon name="chat" size={13} />
+					<span style={{ fontSize: 12 }}>Reply</span>
+				</button>
+				{isOwn && (
+					<button
+						type="button"
+						className="chat-action-btn"
+						title="Delete message"
+						style={{ color: "var(--red)" }}
+						onClick={() => onDelete(msg._id)}
+					>
+						<Icon name="trash" size={13} />
+					</button>
+				)}
+			</div>
+		</div>
+	);
+}
+
+/* ── Thread panel ─────────────────────────────────────────────── */
+function ThreadPanel({ parentMsg, currentUser, onClose }) {
+	const [replies, setReplies] = useState([]);
+	const [input, setInput] = useState("");
+	const { workspaceId } = useParams();
+	const accessToken = useAuthStore((s) => s.accessToken);
+	const endRef = useRef(null);
+
+	useEffect(() => {
+		if (!parentMsg) return;
+		// Load thread replies — using a client-side filter for now
+		// In production this would be GET /messages?threadId=parentMsg._id
+		setReplies([]);
+	}, [parentMsg?._id]);
+
+	const send = () => {
+		const content = input.trim();
+		if (!content) return;
+		const socket = getSocket(accessToken);
+		if (!socket) return;
+		socket.emit("chat:send", { workspaceId, content, threadId: parentMsg._id });
+		setInput("");
+	};
+
+	const handleKey = (e) => {
+		if (e.key === "Enter" && !e.shiftKey) {
+			e.preventDefault();
+			send();
+		}
+	};
+
+	useEffect(() => {
+		const socket = getSocket(accessToken);
+		if (!socket || !parentMsg) return;
+		const handle = ({ message }) => {
+			if (message.threadId === parentMsg._id) {
+				setReplies((prev) => [...prev, message]);
+				setTimeout(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+			}
+		};
+		socket.on("chat:message", handle);
+		return () => socket.off("chat:message", handle);
+	}, [accessToken, parentMsg?._id]);
+
+	if (!parentMsg) return null;
+
+	return (
+		<div className="chat-thread-panel">
+			<div className="chat-thread-header">
+				<span style={{ fontWeight: 600, fontSize: 15, color: "var(--text-primary)" }}>Thread</span>
+				<button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
+					<Icon name="close" size={14} />
+				</button>
+			</div>
+
+			<div className="chat-thread-messages">
+				{/* Original message */}
+				<div style={{ paddingBottom: 12, borderBottom: "1px solid var(--border-subtle)", marginBottom: 12 }}>
+					<MessageRow
+						msg={parentMsg}
+						prevMsg={null}
+						currentUser={currentUser}
+						onReact={() => {}}
+						onReply={() => {}}
+						onDelete={() => {}}
+						threadCount={0}
+					/>
+				</div>
+
+				{replies.length === 0 && (
+					<p style={{ fontSize: 13, color: "var(--text-muted)", textAlign: "center", padding: "24px 0" }}>
+						No replies yet. Be the first to reply!
+					</p>
+				)}
+				{replies.map((r, i) => (
+					<MessageRow
+						key={r._id}
+						msg={r}
+						prevMsg={replies[i - 1] || null}
+						currentUser={currentUser}
+						onReact={() => {}}
+						onReply={() => {}}
+						onDelete={() => {}}
+						threadCount={0}
+					/>
+				))}
+				<div ref={endRef} />
+			</div>
+
+			<div className="chat-input-area">
+				<div className="chat-input-box">
+					<textarea
+						className="chat-input-textarea"
+						value={input}
+						onChange={(e) => setInput(e.target.value)}
+						onKeyDown={handleKey}
+						placeholder="Reply in thread..."
+						rows={2}
+					/>
+					<div className="chat-input-footer">
+						<span className="chat-input-hint">Enter to send</span>
+						<button
+							type="button"
+							onClick={send}
+							disabled={!input.trim()}
+							className="btn btn-primary btn-sm"
+							style={{ padding: "0 10px" }}
+						>
+							<Icon name="send" size={13} />
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+	);
+}
+
+/* ── Typing dots ──────────────────────────────────────────────── */
 function TypingDots({ names }) {
 	if (!names.length) return null;
 	return (
-		<div style={{ padding: "4px 16px 8px", display: "flex", alignItems: "center", gap: 8 }}>
+		<div style={{ padding: "2px 20px 6px", display: "flex", alignItems: "center", gap: 8 }}>
 			<div className="typing-dots">
 				<span />
 				<span />
 				<span />
 			</div>
 			<span style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
-				{names.join(", ")} {names.length === 1 ? "is" : "are"} typing
+				{names.join(", ")} {names.length === 1 ? "is" : "are"} typing…
 			</span>
 		</div>
 	);
 }
 
+/* ── Main page ────────────────────────────────────────────────── */
 export default function ChatPage() {
 	const { workspaceId } = useParams();
 	const accessToken = useAuthStore((s) => s.accessToken);
 	const currentUser = useAuthStore((s) => s.user);
+	const toast = useToast();
 
 	const [messages, setMessages] = useState([]);
 	const [hasMore, setHasMore] = useState(false);
@@ -123,16 +376,19 @@ export default function ChatPage() {
 	const [status, setStatus] = useState("loading");
 	const [typingUsers, setTypingUsers] = useState({});
 	const [loadingMore, setLoadingMore] = useState(false);
+	const [threadMsg, setThreadMsg] = useState(null);
 
 	const messagesEndRef = useRef(null);
 	const typingTimers = useRef({});
 	const isFirstLoad = useRef(true);
 	const inputRef = useRef(null);
 
+	/* Load messages */
 	useEffect(() => {
 		if (!workspaceId) return;
 		let active = true;
-		api.get(`/workspaces/${workspaceId}/messages?limit=50`)
+		api
+			.get(`/workspaces/${workspaceId}/messages?limit=60`)
 			.then(({ data }) => {
 				if (!active) return;
 				setMessages(data.messages);
@@ -148,6 +404,7 @@ export default function ChatPage() {
 		};
 	}, [workspaceId]);
 
+	/* Scroll to bottom on first load */
 	useEffect(() => {
 		if (status === "ready" && isFirstLoad.current) {
 			messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
@@ -155,16 +412,25 @@ export default function ChatPage() {
 		}
 	}, [status]);
 
+	/* Socket */
 	useEffect(() => {
 		if (!workspaceId || !accessToken) return;
 		const socket = getSocket(accessToken);
 		if (!socket) return;
-
 		socket.emit("join:workspace", { workspaceId });
 
 		const handleMessage = ({ message }) => {
+			if (message.threadId) return; // thread replies handled in ThreadPanel
 			setMessages((prev) => [...prev, message]);
 			setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+		};
+
+		const handleReaction = ({ messageId, reactions }) => {
+			setMessages((prev) => prev.map((m) => (m._id === messageId ? { ...m, reactions } : m)));
+		};
+
+		const handleDeleted = ({ messageId }) => {
+			setMessages((prev) => prev.filter((m) => m._id !== messageId));
 		};
 
 		const handleTyping = ({ userId, name, isTyping }) => {
@@ -190,9 +456,13 @@ export default function ChatPage() {
 		};
 
 		socket.on("chat:message", handleMessage);
+		socket.on("chat:reaction_updated", handleReaction);
+		socket.on("chat:deleted", handleDeleted);
 		socket.on("chat:typing", handleTyping);
 		return () => {
 			socket.off("chat:message", handleMessage);
+			socket.off("chat:reaction_updated", handleReaction);
+			socket.off("chat:deleted", handleDeleted);
 			socket.off("chat:typing", handleTyping);
 		};
 	}, [workspaceId, accessToken, currentUser]);
@@ -218,18 +488,53 @@ export default function ChatPage() {
 		}, 2500);
 	};
 
-	const handleKeyDown = (e) => {
+	const handleKey = (e) => {
 		if (e.key === "Enter" && !e.shiftKey) {
 			e.preventDefault();
 			handleSend();
 		}
 	};
 
+	const handleReact = (messageId, emoji) => {
+		const socket = getSocket(accessToken);
+		if (!socket) return;
+		socket.emit("chat:react", { workspaceId, messageId, emoji });
+		// Optimistic update
+		setMessages((prev) =>
+			prev.map((m) => {
+				if (m._id !== messageId) return m;
+				const reactions = [...(m.reactions || [])];
+				const idx = reactions.findIndex((r) => r.emoji === emoji);
+				const uid = currentUser?._id;
+				if (idx >= 0) {
+					const users = reactions[idx].users || [];
+					if (users.includes(uid)) {
+						reactions[idx] = { ...reactions[idx], users: users.filter((u) => u !== uid) };
+						if (!reactions[idx].users.length) reactions.splice(idx, 1);
+					} else {
+						reactions[idx] = { ...reactions[idx], users: [...users, uid] };
+					}
+				} else {
+					reactions.push({ emoji, users: [uid] });
+				}
+				return { ...m, reactions };
+			}),
+		);
+	};
+
+	const handleDelete = (messageId) => {
+		const socket = getSocket(accessToken);
+		if (!socket) return;
+		socket.emit("chat:delete", { workspaceId, messageId });
+		setMessages((prev) => prev.filter((m) => m._id !== messageId));
+		toast.success("Message deleted");
+	};
+
 	const loadMore = async () => {
 		if (!hasMore || loadingMore || !nextCursor) return;
 		setLoadingMore(true);
 		try {
-			const { data } = await api.get(`/workspaces/${workspaceId}/messages?limit=50&before=${nextCursor}`);
+			const { data } = await api.get(`/workspaces/${workspaceId}/messages?limit=60&before=${nextCursor}`);
 			setMessages((prev) => [...data.messages, ...prev]);
 			setHasMore(data.hasMore);
 			setNextCursor(data.nextCursor);
@@ -242,10 +547,11 @@ export default function ChatPage() {
 
 	const typingNames = Object.values(typingUsers);
 
+	/* Group messages by date */
 	const grouped = messages.reduce((acc, msg) => {
-		const dateLabel = formatDate(msg.createdAt);
-		if (!acc.length || acc[acc.length - 1].date !== dateLabel) {
-			acc.push({ date: dateLabel, items: [msg] });
+		const label = fmtDate(msg.createdAt);
+		if (!acc.length || acc[acc.length - 1].date !== label) {
+			acc.push({ date: label, items: [msg] });
 		} else {
 			acc[acc.length - 1].items.push(msg);
 		}
@@ -253,298 +559,156 @@ export default function ChatPage() {
 	}, []);
 
 	return (
-		<div
-			className="fade-in"
-			style={{
-				display: "flex",
-				flexDirection: "column",
-				height: "calc(100vh - 56px - 48px)", // topbar + content padding
-				background: "var(--bg-surface)",
-				border: "1px solid var(--border)",
-				borderRadius: "var(--radius-lg)",
-				overflow: "hidden",
-			}}
-		>
-			{/* Header */}
-			<div
-				style={{
-					display: "flex",
-					alignItems: "center",
-					justifyContent: "space-between",
-					padding: "12px 20px",
-					borderBottom: "1px solid var(--border)",
-					flexShrink: 0,
-				}}
-			>
-				<div>
-					<h1
-						style={{
-							display: "flex",
-							alignItems: "center",
-							gap: 8,
-							fontSize: 15,
-							fontWeight: 600,
-							color: "var(--text-primary)",
-							margin: 0,
-						}}
-					>
-						<Icon
-							name="chat"
-							size={16}
-						/>{" "}
-						Workspace Chat
-					</h1>
-					<p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>All messages visible to workspace members</p>
-				</div>
-				<div
-					style={{
-						display: "flex",
-						alignItems: "center",
-						gap: 6,
-						background: "var(--success-muted)",
-						border: "1px solid rgba(52,211,153,0.3)",
-						borderRadius: "var(--radius-full)",
-						padding: "3px 10px",
-					}}
-				>
-					<div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--success)" }} />
-					<span style={{ fontSize: 12, fontWeight: 600, color: "var(--success)" }}>Live</span>
-				</div>
-			</div>
-
-			{/* Messages area */}
-			<div style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }}>
-				{status === "loading" && (
-					<div style={{ display: "flex", flexDirection: "column", gap: 16, paddingTop: 16 }}>
-						{[1, 2, 3].map((i) => (
-							<div
-								key={i}
-								style={{ display: "flex", gap: 10, alignItems: "flex-end" }}
-							>
-								<div
-									className="skeleton"
-									style={{ width: 32, height: 32, borderRadius: "50%", flexShrink: 0 }}
-								/>
-								<div
-									className="skeleton"
-									style={{ height: 44, width: `${120 + i * 60}px`, borderRadius: "var(--radius-lg)" }}
-								/>
-							</div>
-						))}
+		<div className="chat-layout fade-in">
+			{/* Main chat area */}
+			<div className="chat-main">
+				{/* Header */}
+				<div className="chat-header">
+					<div className="chat-header-left">
+						<span style={{ fontSize: 18, color: "var(--text-muted)" }}>#</span>
+						<div>
+							<div className="chat-header-name">general</div>
+							<div className="chat-header-desc">All workspace members</div>
+						</div>
 					</div>
-				)}
-				{status === "error" && (
-					<p style={{ textAlign: "center", color: "var(--danger)", fontSize: 14, paddingTop: 32 }}>Failed to load messages.</p>
-				)}
-				{status === "ready" && (
-					<>
-						{hasMore && (
-							<div style={{ textAlign: "center", marginBottom: 16 }}>
-								<button
-									type="button"
-									onClick={loadMore}
-									disabled={loadingMore}
-									className="btn btn-ghost btn-sm"
-									style={{ fontSize: 12 }}
-								>
-									{loadingMore ? (
-										<>
-											<span
-												className="spinner"
-												style={{ width: 11, height: 11 }}
-											/>{" "}
-											Loading...
-										</>
-									) : (
-										"Load older messages"
-									)}
-								</button>
-							</div>
-						)}
-						{messages.length === 0 && (
-							<div style={{ textAlign: "center", padding: "64px 24px", color: "var(--text-secondary)" }}>
-								<div className="icon-box icon-box-accent empty-state-icon">
-									<Icon
-										name="chat"
-										size={24}
-									/>
-								</div>
-								<p style={{ fontSize: 15, fontWeight: 500, color: "var(--text-primary)", marginBottom: 6 }}>No messages yet</p>
-								<p style={{ fontSize: 13 }}>Be the first to say hello!</p>
-							</div>
-						)}
-						{grouped.map((group) => (
-							<div key={group.date}>
-								{/* Date separator */}
-								<div style={{ display: "flex", alignItems: "center", gap: 12, margin: "16px 0 12px" }}>
-									<div style={{ flex: 1, height: 1, background: "var(--border)" }} />
-									<span
-										style={{
-											fontSize: 11,
-											fontWeight: 600,
-											color: "var(--text-muted)",
-											background: "var(--bg-surface)",
-											padding: "0 8px",
-										}}
-									>
-										{group.date}
-									</span>
-									<div style={{ flex: 1, height: 1, background: "var(--border)" }} />
-								</div>
-
-								{group.items.map((msg) => {
-									const isOwn = msg.sender?._id === currentUser?._id;
-									const avatarColor = getColor(msg.sender?.name || "");
-									return (
-										<div
-											key={msg._id}
-											style={{
-												display: "flex",
-												alignItems: "flex-end",
-												gap: 8,
-												marginBottom: 10,
-												flexDirection: isOwn ? "row-reverse" : "row",
-											}}
-										>
-											{/* Avatar */}
-											<div
-												style={{
-													width: 30,
-													height: 30,
-													borderRadius: "50%",
-													background: msg.sender?.avatar ? "transparent" : avatarColor,
-													flexShrink: 0,
-													display: "flex",
-													alignItems: "center",
-													justifyContent: "center",
-													fontSize: 11,
-													fontWeight: 700,
-													color: "#fff",
-													overflow: "hidden",
-												}}
-											>
-												{msg.sender?.avatar ? (
-													<img
-														src={msg.sender.avatar}
-														alt={msg.sender.name}
-														style={{ width: "100%", height: "100%", objectFit: "cover" }}
-													/>
-												) : (
-													getInitials(msg.sender?.name || "?")
-												)}
-											</div>
-
-											{/* Bubble */}
-											<div
-												style={{
-													maxWidth: "70%",
-													display: "flex",
-													flexDirection: "column",
-													alignItems: isOwn ? "flex-end" : "flex-start",
-												}}
-											>
-												{!isOwn && (
-													<span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 3 }}>
-														{msg.sender?.name || "Unknown"}
-													</span>
-												)}
-												<div
-													style={{
-														background: isOwn ? "var(--accent)" : "var(--bg-surface-2)",
-														color: isOwn ? "#fff" : "var(--text-primary)",
-														padding: "9px 14px",
-														borderRadius: isOwn ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
-														fontSize: 14,
-														lineHeight: 1.5,
-														wordBreak: "break-word",
-													}}
-												>
-													{renderMessageContent(msg.content, currentUser)}
-												</div>
-												<span style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
-													{formatTime(msg.createdAt)}
-												</span>
-											</div>
-										</div>
-									);
-								})}
-							</div>
-						))}
-						<div ref={messagesEndRef} />
-					</>
-				)}
-			</div>
-
-			{/* Typing indicator */}
-			<TypingDots names={typingNames} />
-
-			{/* Input */}
-			<div style={{ flexShrink: 0, padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
-				<div
-					style={{
-						display: "flex",
-						alignItems: "flex-end",
-						gap: 10,
-						background: "var(--bg-surface-2)",
-						border: "1px solid var(--border)",
-						borderRadius: "var(--radius-lg)",
-						padding: "8px 8px 8px 14px",
-						transition: "border-color 0.15s",
-					}}
-					onFocusCapture={(e) => (e.currentTarget.style.borderColor = "var(--border-focus)")}
-					onBlurCapture={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
-				>
-					<textarea
-						ref={inputRef}
-						id="chat-input"
-						value={input}
-						onChange={handleInputChange}
-						onKeyDown={handleKeyDown}
-						rows={1}
-						placeholder="Type a message... (Enter to send)"
-						style={{
-							flex: 1,
-							resize: "none",
-							background: "transparent",
-							border: "none",
-							outline: "none",
-							fontSize: 14,
-							color: "var(--text-primary)",
-							fontFamily: "inherit",
-							maxHeight: 120,
-							lineHeight: 1.5,
-							padding: 0,
-						}}
-					/>
-					<button
-						type="button"
-						onClick={handleSend}
-						disabled={!input.trim()}
-						aria-label="Send message"
-						style={{
-							width: 34,
-							height: 34,
-							borderRadius: "var(--radius-md)",
-							background: input.trim() ? "var(--accent)" : "var(--bg-surface-3)",
-							border: "none",
-							cursor: input.trim() ? "pointer" : "not-allowed",
-							display: "flex",
-							alignItems: "center",
-							justifyContent: "center",
-							color: "#fff",
-							fontSize: 16,
-							transition: "all 0.15s",
-							flexShrink: 0,
-						}}
-					>
-						<Icon
-							name="send"
-							size={15}
-						/>
-					</button>
+					<div className="chat-header-right">
+						<div
+							style={{
+								display: "flex",
+								alignItems: "center",
+								gap: 6,
+								background: "var(--green-muted)",
+								border: "1px solid var(--green-border)",
+								borderRadius: "var(--r-full)",
+								padding: "3px 10px",
+							}}
+						>
+							<div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--green)" }} />
+							<span style={{ fontSize: 12, fontWeight: 600, color: "var(--green)" }}>Live</span>
+						</div>
+					</div>
 				</div>
-				<p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6, textAlign: "right" }}>Enter to send / Shift+Enter for newline</p>
+
+				{/* Messages */}
+				<div className="chat-messages">
+					{status === "loading" && (
+						<div style={{ display: "flex", flexDirection: "column", gap: 20, paddingTop: 20 }}>
+							{[1, 2, 3, 4].map((i) => (
+								<div key={i} style={{ display: "flex", gap: 12 }}>
+									<div className="skeleton" style={{ width: 36, height: 36, borderRadius: "50%", flexShrink: 0 }} />
+									<div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
+										<div className="skeleton" style={{ height: 14, width: "20%" }} />
+										<div className="skeleton" style={{ height: 16, width: `${40 + i * 10}%` }} />
+									</div>
+								</div>
+							))}
+						</div>
+					)}
+
+					{status === "error" && (
+						<p style={{ textAlign: "center", color: "var(--red)", fontSize: 14, paddingTop: 32 }}>Failed to load messages.</p>
+					)}
+
+					{status === "ready" && (
+						<>
+							{hasMore && (
+								<div style={{ textAlign: "center", marginBottom: 16 }}>
+									<button type="button" onClick={loadMore} disabled={loadingMore} className="btn btn-ghost btn-sm">
+										{loadingMore ? (
+											<>
+												<span className="spinner" style={{ width: 11, height: 11 }} /> Loading…
+											</>
+										) : (
+											"Load older messages"
+										)}
+									</button>
+								</div>
+							)}
+
+							{messages.length === 0 && (
+								<div className="empty-state">
+									<div className="icon-box icon-box-accent empty-state-icon">
+										<Icon name="chat" size={24} />
+									</div>
+									<p style={{ fontSize: 15, fontWeight: 500, color: "var(--text-primary)", marginBottom: 6 }}>
+										No messages yet
+									</p>
+									<p>Be the first to say hello! 👋</p>
+								</div>
+							)}
+
+							{grouped.map((group) => (
+								<div key={group.date}>
+									<div className="chat-date-divider">
+										<span className="chat-date-label">{group.date}</span>
+									</div>
+									{group.items.map((msg, idx) => (
+										<MessageRow
+											key={msg._id}
+											msg={msg}
+											prevMsg={group.items[idx - 1] || null}
+											currentUser={currentUser}
+											onReact={handleReact}
+											onReply={setThreadMsg}
+											onDelete={handleDelete}
+											threadCount={msg.threadCount || 0}
+										/>
+									))}
+								</div>
+							))}
+
+							<div ref={messagesEndRef} />
+						</>
+					)}
+				</div>
+
+				{/* Typing indicator */}
+				<TypingDots names={typingNames} />
+
+				{/* Input */}
+				<div className="chat-input-area">
+					<div className="chat-input-box">
+						<textarea
+							ref={inputRef}
+							id="chat-input"
+							className="chat-input-textarea"
+							value={input}
+							onChange={handleInputChange}
+							onKeyDown={handleKey}
+							rows={1}
+							placeholder="Message #general..."
+						/>
+						<div className="chat-input-footer">
+							<span className="chat-input-hint">Enter to send · Shift+Enter for new line</span>
+							<button
+								type="button"
+								onClick={handleSend}
+								disabled={!input.trim()}
+								aria-label="Send message"
+								style={{
+									width: 30,
+									height: 30,
+									borderRadius: "var(--r-md)",
+									background: input.trim() ? "var(--accent)" : "var(--bg-surface-3)",
+									border: "none",
+									cursor: input.trim() ? "pointer" : "not-allowed",
+									display: "flex",
+									alignItems: "center",
+									justifyContent: "center",
+									color: "#fff",
+									transition: "all 0.15s",
+									flexShrink: 0,
+								}}
+							>
+								<Icon name="send" size={14} />
+							</button>
+						</div>
+					</div>
+				</div>
 			</div>
+
+			{/* Thread panel */}
+			{threadMsg && <ThreadPanel parentMsg={threadMsg} currentUser={currentUser} onClose={() => setThreadMsg(null)} />}
 		</div>
 	);
 }

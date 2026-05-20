@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import api from "../api/axios";
 import Icon from "../components/ui/Icon.jsx";
 
-const TABS = ["general", "members", "danger"];
+const TABS = ["general", "members", "channels", "danger"];
 const roleOptions = ["viewer", "editor", "admin"];
 
 const isEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
@@ -321,13 +321,19 @@ export default function WorkspaceSettings() {
 									size={14}
 								/>
 							)}
+							{tab === "channels" && (
+								<Icon
+									name="chat"
+									size={14}
+								/>
+							)}
 							{tab === "danger" && (
 								<Icon
 									name="alert"
 									size={14}
 								/>
 							)}
-							{tab === "danger" ? "Danger Zone" : tab}
+							{tab === "channels" ? "Channels" : tab === "danger" ? "Danger Zone" : tab}
 						</button>
 					))}
 				</div>
@@ -633,6 +639,79 @@ export default function WorkspaceSettings() {
 							)}
 						</SettingsCard>
 					)}
+				</div>
+			)}
+
+			{activeTab === "channels" && (
+				<div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+					<SettingsCard
+						title="Channels"
+						subtitle="Channels let your team organize conversations by topic."
+					>
+						{/* Default channel */}
+						{[
+							{ name: "general", desc: "All workspace members — company-wide announcements and work-based matters", locked: true },
+							{ name: "random", desc: "Non-work banter and everything in between", locked: false },
+						].map((ch) => (
+							<div
+								key={ch.name}
+								style={{
+									display: "flex",
+									alignItems: "center",
+									justifyContent: "space-between",
+									gap: 16,
+									padding: "12px 16px",
+									background: "var(--bg-surface-2)",
+									borderRadius: "var(--r-md)",
+									border: "1px solid var(--border-default)",
+									marginBottom: 10,
+								}}
+							>
+								<div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+									<span style={{ fontSize: 18, color: "var(--text-muted)" }}>#</span>
+									<div>
+										<p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>{ch.name}</p>
+										<p style={{ margin: "3px 0 0", fontSize: 12, color: "var(--text-secondary)" }}>{ch.desc}</p>
+									</div>
+								</div>
+								<div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+									{ch.locked && (
+										<span className="badge badge-muted" style={{ fontSize: 11 }}>Default</span>
+									)}
+									<span
+										className="badge"
+										style={{ background: "var(--green-muted)", color: "var(--green)", fontSize: 11 }}
+									>
+										✓ Joined
+									</span>
+								</div>
+							</div>
+						))}
+
+						{canManageInvites && (
+							<div
+								style={{
+									marginTop: 16,
+									padding: "14px 16px",
+									background: "var(--accent-muted)",
+									border: "1px dashed var(--accent-border)",
+									borderRadius: "var(--r-md)",
+									display: "flex",
+									alignItems: "center",
+									justifyContent: "space-between",
+									gap: 12,
+								}}
+							>
+								<div>
+									<p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: "var(--accent-light)" }}>Create a new channel</p>
+									<p style={{ margin: "3px 0 0", fontSize: 12, color: "var(--text-muted)" }}>Custom channels for projects, teams, or topics</p>
+								</div>
+								<button type="button" className="btn btn-primary btn-sm" disabled title="Coming soon">
+									<Icon name="plus" size={13} /> New channel
+								</button>
+							</div>
+						)}
+					</SettingsCard>
 				</div>
 			)}
 

@@ -14,7 +14,7 @@ export function ToastProvider({ children }) {
 	const show = useCallback(
 		(message, { type = "info", duration = 4000 } = {}) => {
 			const id = ++_id;
-			setToasts((prev) => [...prev, { id, message, type }]);
+			setToasts((prev) => [...prev, { id, message, type, duration }]);
 			if (duration > 0) {
 				setTimeout(() => dismiss(id), duration);
 			}
@@ -57,7 +57,7 @@ function ToastContainer({ toasts, onDismiss }) {
 	return (
 		<div className="toast-container">
 			{toasts.map((t) => (
-				<div key={t.id} className={`toast toast-${t.type}`}>
+				<div key={t.id} className={`toast toast-${t.type}`} style={{ position: "relative", overflow: "hidden" }}>
 					<span
 						style={{
 							fontSize: 16,
@@ -91,6 +91,7 @@ function ToastContainer({ toasts, onDismiss }) {
 					>
 						×
 					</button>
+					{t.duration > 0 && <div className="toast-progress" style={{ animationDuration: `${t.duration}ms`, background: t.type === "success" ? "var(--green)" : t.type === "error" ? "var(--red)" : t.type === "warning" ? "var(--yellow)" : "var(--blue)" }} />}
 				</div>
 			))}
 		</div>

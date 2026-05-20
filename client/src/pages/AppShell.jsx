@@ -791,10 +791,12 @@ export default function AppShell() {
 							onClick={() => setBellOpen((open) => !open)}
 							aria-label="Notifications"
 						>
-							<Icon
-								name="bell"
-								size={16}
-							/>
+							<div key={unreadCount} className={unreadCount > 0 ? "bell-bounce" : ""} style={{ display: "flex" }}>
+								<Icon
+									name="bell"
+									size={16}
+								/>
+							</div>
 							{unreadCount > 0 && (
 								<span
 									className="badge badge-accent"
@@ -918,6 +920,26 @@ export default function AppShell() {
 				<main className="content-area fade-in">
 					<Outlet />
 				</main>
+				
+				{/* Mobile Bottom Nav */}
+				<nav className="mobile-bottom-nav">
+					<Link to="/app/workspaces" className="mobile-nav-item">
+						<Icon name="kanban" size={20} />
+						<span>Boards</span>
+					</Link>
+					<Link to="/app/my-work" className="mobile-nav-item">
+						<Icon name="check" size={20} />
+						<span>My Work</span>
+					</Link>
+					<Link to="/app/notifications" className="mobile-nav-item">
+						<Icon name="bell" size={20} />
+						<span>Alerts</span>
+					</Link>
+					<button type="button" className="mobile-nav-item" onClick={() => setCommandOpen(true)} style={{ background: "none", border: "none" }}>
+						<Icon name="search" size={20} />
+						<span>Search</span>
+					</button>
+				</nav>
 			</div>
 
 			{commandOpen && (

@@ -155,8 +155,10 @@ function EmojiPicker({ onPick, onClose }) {
 }
 
 /* ── Message row ──────────────────────────────────────────────── */
-function MessageRow({ msg, prevMsg, currentUser, onReact, onReply, onDelete, threadCount }) {
+function MessageRow({ msg, prevMsg, currentUser, onReact, onReply, onDelete, onEdit, threadCount }) {
 	const [emojiOpen, setEmojiOpen] = useState(false);
+	const [isEditing, setIsEditing] = useState(false);
+	const [editContent, setEditContent] = useState(msg.content);
 	const isOwn = msg.sender?._id === currentUser?._id;
 	const showHeader = !prevMsg || prevMsg.sender?._id !== msg.sender?._id || !isSameMinute(prevMsg.createdAt, msg.createdAt);
 	const isOnlyEmoji = /^\p{Emoji}+$/u.test((msg.content || "").trim()) && (msg.content || "").trim().length <= 4;
@@ -172,9 +174,27 @@ function MessageRow({ msg, prevMsg, currentUser, onReact, onReply, onDelete, thr
 						<span className="chat-msg-time">{fmtTime(msg.createdAt)}</span>
 					</div>
 				)}
-				<p className={`chat-msg-text${isOnlyEmoji ? " only-emoji" : ""}`}>
-					{renderContent(msg.content, currentUser)}
-				</p>
+				{isEditing ? (
+					<div style={{ marginTop: 4, marginBottom: 8 }}>
+						<textarea className="input" style={{ width: "100%", resize: "none", fontSize: 14 }} rows={2} value={editContent} onChange={(e) => setEditContent(e.target.value)} onKeyDown={(e) => {
+							if (e.key === "Enter" && !e.shiftKey) {
+								e.preventDefault();
+								onEdit(msg._id, editContent);
+								setIsEditing(false);
+							}
+							if (e.key === "Escape") setIsEditing(false);
+						}} autoFocus />
+						<div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+							<button type="button" className="btn btn-primary btn-sm" onClick={() => { onEdit(msg._id, editContent); setIsEditing(false); }}>Save</button>
+							<button type="button" className="btn btn-ghost btn-sm" onClick={() => setIsEditing(false)}>Cancel</button>
+						</div>
+					</div>
+				) : (
+					<p className={`chat-msg-text${isOnlyEmoji ? " only-emoji" : ""}`}>
+						{renderContent(msg.content, currentUser)}
+						{msg.isEdited && <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 6 }}>(edited)</span>}
+					</p>
+				)}
 
 				<Reactions
 					reactions={msg.reactions || []}
@@ -184,10 +204,10 @@ function MessageRow({ msg, prevMsg, currentUser, onReact, onReply, onDelete, thr
 
 				{threadCount > 0 && (
 					<button type="button" className="chat-thread-bar" onClick={() => onReply(msg)}>
-						<span style={{ fontSize: 12, color: "var(--accent)" }}>💬</span>
-						<span>
-							{threadCount} {threadCount === 1 ? "reply" : "replies"}
-						</span>
+						<div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+							<span style={{ fontWeight: 600 }}>{threadCount} {threadCount === 1 ? "reply" : "replies"}</span>
+							<span style={{ color: "var(--text-muted)" }}>· View thread →</span>
+						</div>
 					</button>
 				)}
 			</div>
@@ -210,18 +230,22 @@ function MessageRow({ msg, prevMsg, currentUser, onReact, onReply, onDelete, thr
 				</div>
 				<button type="button" className="chat-action-btn" title="Reply in thread" onClick={() => onReply(msg)}>
 					<Icon name="chat" size={13} />
-					<span style={{ fontSize: 12 }}>Reply</span>
 				</button>
 				{isOwn && (
-					<button
-						type="button"
-						className="chat-action-btn"
-						title="Delete message"
-						style={{ color: "var(--red)" }}
-						onClick={() => onDelete(msg._id)}
-					>
-						<Icon name="trash" size={13} />
-					</button>
+					<>
+						<button type="button" className="chat-action-btn" title="Edit message" onClick={() => { setIsEditing(true); setEditContent(msg.content); }}>
+							<Icon name="pencil" size={13} />
+						</button>
+						<button
+							type="button"
+							className="chat-action-btn"
+							title="Delete message"
+							style={{ color: "var(--red)" }}
+							onClick={() => onDelete(msg._id)}
+						>
+							<Icon name="trash" size={13} />
+						</button>
+					</>
 				)}
 			</div>
 		</div>
@@ -433,6 +457,10 @@ export default function ChatPage() {
 			setMessages((prev) => prev.filter((m) => m._id !== messageId));
 		};
 
+		const handleEdited = ({ message }) => {
+			setMessages((prev) => prev.map((m) => (m._id === message._id ? { ...m, content: message.content, isEdited: true } : m)));
+		};
+
 		const handleTyping = ({ userId, name, isTyping }) => {
 			if (userId === currentUser?._id) return;
 			setTypingUsers((prev) => {
@@ -458,11 +486,13 @@ export default function ChatPage() {
 		socket.on("chat:message", handleMessage);
 		socket.on("chat:reaction_updated", handleReaction);
 		socket.on("chat:deleted", handleDeleted);
+		socket.on("chat:edited", handleEdited);
 		socket.on("chat:typing", handleTyping);
 		return () => {
 			socket.off("chat:message", handleMessage);
 			socket.off("chat:reaction_updated", handleReaction);
 			socket.off("chat:deleted", handleDeleted);
+			socket.off("chat:edited", handleEdited);
 			socket.off("chat:typing", handleTyping);
 		};
 	}, [workspaceId, accessToken, currentUser]);
@@ -530,6 +560,15 @@ export default function ChatPage() {
 		toast.success("Message deleted");
 	};
 
+	const handleEdit = (messageId, newContent) => {
+		if (!newContent.trim()) return;
+		const socket = getSocket(accessToken);
+		if (!socket) return;
+		socket.emit("chat:edit", { workspaceId, messageId, content: newContent });
+		// Optimistic update
+		setMessages((prev) => prev.map((m) => (m._id === messageId ? { ...m, content: newContent, isEdited: true } : m)));
+	};
+
 	const loadMore = async () => {
 		if (!hasMore || loadingMore || !nextCursor) return;
 		setLoadingMore(true);
@@ -587,6 +626,12 @@ export default function ChatPage() {
 							<span style={{ fontSize: 12, fontWeight: 600, color: "var(--green)" }}>Live</span>
 						</div>
 					</div>
+				</div>
+
+				<div style={{ padding: "8px 20px", background: "var(--bg-surface-2)", borderBottom: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+					<span style={{ color: "var(--accent)" }}>📌</span>
+					<span style={{ fontWeight: 600, color: "var(--text-primary)" }}>1 pinned message</span>
+					<button type="button" className="btn btn-ghost btn-sm" style={{ padding: "0 6px", height: 22 }}>View</button>
 				</div>
 
 				{/* Messages */}
@@ -651,6 +696,7 @@ export default function ChatPage() {
 											onReact={handleReact}
 											onReply={setThreadMsg}
 											onDelete={handleDelete}
+											onEdit={handleEdit}
 											threadCount={msg.threadCount || 0}
 										/>
 									))}

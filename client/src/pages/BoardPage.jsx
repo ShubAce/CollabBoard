@@ -158,7 +158,7 @@ function TaskCard({ task, provided, snapshot, columnTheme, onOpen }) {
 			ref={provided.innerRef}
 			{...provided.draggableProps}
 			{...provided.dragHandleProps}
-			className={`task-card${snapshot.isDragging ? " dragging" : ""}${isBlocked ? " blocked" : ""}`}
+			className={`task-card card-enter${snapshot.isDragging ? " dragging" : ""}${isBlocked ? " blocked" : ""}`}
 			role="button"
 			onClick={() => {
 				if (!snapshot.isDragging) onOpen?.();
@@ -521,19 +521,28 @@ function TaskPanel({ task, column, onClose, onSubTaskAdd, onSubTaskToggle, onSub
 				{subTasks.length > 0 && <p className="task-meta-muted">{completedSubTasks}/{subTasks.length} completed</p>}
 			</div>
 
-			{attachments.length > 0 && (
-				<div className="task-panel-section">
-					<h3>Attachments</h3>
+			<div className="task-panel-section">
+				<h3>Attachments {attachments.length > 0 && <span className="badge badge-muted" style={{ marginLeft: 6 }}>{attachments.length}</span>}</h3>
+				{attachments.length > 0 && (
 					<div className="task-panel-list">
 						{attachments.map((item) => (
-							<div key={item.url} className="task-panel-list-item">
-								<Icon name="paperclip" size={12} />
-								<span>{item.name}</span>
+							<div key={item.url || item.name} className="task-panel-list-item" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+								<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+									<Icon name="paperclip" size={14} />
+									<span style={{ fontSize: 13 }}>{item.name}</span>
+								</div>
+								<div style={{ display: "flex", gap: 4 }}>
+									<button type="button" className="btn btn-ghost btn-sm" style={{ padding: "4px 8px" }} title="Download"><Icon name="download" size={14} /></button>
+									<button type="button" className="btn btn-ghost btn-sm" style={{ padding: "4px 8px", color: "var(--danger)" }} title="Remove"><Icon name="trash" size={14} /></button>
+								</div>
 							</div>
 						))}
 					</div>
-				</div>
-			)}
+				)}
+				<button type="button" className="btn btn-ghost btn-sm" style={{ marginTop: attachments.length ? 8 : 0, width: "100%", borderStyle: "dashed", justifyContent: "center" }}>
+					<Icon name="upload" size={14} /> Attach file (drag or click)
+				</button>
+			</div>
 
 			<div className="task-panel-section">
 				<h3>Activity & Comments</h3>
@@ -922,6 +931,8 @@ export default function BoardPage() {
 		}
 	};
 
+	const columns = useMemo(() => [...(board?.columns || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), [board]);
+
 	if (status === "loading") {
 		return (
 			<div
@@ -952,8 +963,6 @@ export default function BoardPage() {
 	if (error) {
 		return <div className="message-error">{error}</div>;
 	}
-
-	const columns = useMemo(() => [...(board?.columns || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), [board]);
 	const showPanel = Boolean(selectedTask) && (activeView === "board" || activeView === "list");
 
 	return (
@@ -987,6 +996,14 @@ export default function BoardPage() {
 							/>{" "}
 							Back to boards
 						</Link>
+						<button
+							type="button"
+							className="btn btn-ghost btn-sm"
+							onClick={() => setShowShortcuts(true)}
+							title="Keyboard shortcuts"
+						>
+							<span className="command-kbd">?</span>
+						</button>
 						<button
 							type="button"
 							className="btn btn-ghost btn-sm"
@@ -1342,31 +1359,51 @@ export default function BoardPage() {
 						</div>
 					)}
 					{activeView === "timeline" && (
-						<div
-							className="card"
-							style={{ padding: 24, textAlign: "center" }}
-						>
-							<div
-								className="icon-box icon-box-accent"
-								style={{ width: 44, height: 44, margin: "0 auto 12px" }}
-							>
-								<Icon
-									name="activity"
-									size={20}
-								/>
-							</div>
-							<h3 style={{ margin: "0 0 6px", fontSize: 16, color: "var(--text-primary)" }}>Timeline view</h3>
-							<p style={{ margin: "0 0 16px", fontSize: 13, color: "var(--text-secondary)" }}>
-								Timeline view is coming soon for workload planning.
-							</p>
-							<div style={{ display: "grid", gap: 10 }}>
-								{[1, 2, 3].map((item) => (
-									<div
-										key={item}
-										className="skeleton"
-										style={{ height: 16 }}
-									/>
+						<div className="card" style={{ padding: 24, overflowX: "auto" }}>
+							<div style={{ minWidth: 800 }}>
+								<div style={{ display: "flex", borderBottom: "1px solid var(--border-subtle)", paddingBottom: 12, marginBottom: 16 }}>
+									<div style={{ width: 220, flexShrink: 0, fontWeight: 600, color: "var(--text-secondary)", fontSize: 13 }}>Assignee</div>
+									<div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(7, 1fr)", color: "var(--text-muted)", fontSize: 12, textAlign: "center" }}>
+										<span>Mon 12</span><span>Tue 13</span><span>Wed 14</span><span>Thu 15</span><span>Fri 16</span><span>Sat 17</span><span>Sun 18</span>
+									</div>
+								</div>
+								
+								{/* Timeline rows based on unique task assignees */}
+								{columns.flatMap(c => c.tasks || []).reduce((acc, t) => {
+									t.assignees?.forEach(a => { if (!acc.find(x => x._id === a._id)) acc.push(a); });
+									if (!t.assignees?.length && !acc.find(x => x._id === "unassigned")) acc.push({ _id: "unassigned", name: "Unassigned" });
+									return acc;
+								}, []).map((user, i) => (
+									<div key={user._id} style={{ display: "flex", alignItems: "center", padding: "12px 0", borderBottom: "1px solid var(--border-subtle)" }}>
+										<div style={{ width: 220, flexShrink: 0, display: "flex", alignItems: "center", gap: 10 }}>
+											<div className="avatar avatar-xs" style={{ background: "var(--accent-muted)", color: "var(--accent)" }}>{user.name?.[0] || "?"}</div>
+											<span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>{user.name}</span>
+										</div>
+										<div style={{ flex: 1, position: "relative", height: 32, background: "var(--bg-surface-2)", borderRadius: "var(--r-sm)" }}>
+											{/* Render bars for tasks assigned to this user (mock layout based on index) */}
+											{columns.flatMap(c => c.tasks || []).filter(t => (user._id === "unassigned" ? !t.assignees?.length : t.assignees?.some(a => a._id === user._id))).map((t, taskIdx) => (
+												<div key={t._id} title={t.title} style={{
+													position: "absolute",
+													left: `${((taskIdx * 15 + i * 20) % 70)}%`,
+													width: `${15 + (t.title.length % 20)}%`,
+													top: 4, bottom: 4,
+													background: PRIORITY_META[t.priority || "medium"]?.color || "var(--col-todo)",
+													borderRadius: "var(--r-sm)", padding: "2px 8px", fontSize: 11, color: "#fff",
+													display: "flex", alignItems: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+													boxShadow: "var(--shadow-sm)", cursor: "pointer"
+												}} onClick={() => {
+													const col = columns.find(c => c.tasks?.find(task => task._id === t._id));
+													setSelectedTask({ task: t, column: col });
+												}}>
+													{t.title}
+												</div>
+											))}
+										</div>
+									</div>
 								))}
+								{columns.flatMap(c => c.tasks || []).length === 0 && (
+									<div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>No tasks to display in timeline.</div>
+								)}
 							</div>
 						</div>
 					)}

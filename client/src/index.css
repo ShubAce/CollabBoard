@@ -2012,6 +2012,50 @@
 	}
 	.content-area {
 		padding: 16px;
+		padding-bottom: 72px; /* safe space for mobile nav */
+	}
+
+	.mobile-bottom-nav {
+		display: flex;
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		height: 60px;
+		background: var(--bg-surface-1);
+		border-top: 1px solid var(--border-subtle);
+		z-index: 60;
+		justify-content: space-around;
+		align-items: center;
+		padding-bottom: env(safe-area-inset-bottom);
+	}
+	
+	.mobile-nav-item {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 4px;
+		color: var(--text-muted);
+		font-size: 10px;
+		font-weight: 600;
+		text-decoration: none;
+		padding: 8px 12px;
+	}
+	
+	.mobile-nav-item.active {
+		color: var(--accent);
+	}
+
+	.command-overlay {
+		padding: 0;
+		align-items: stretch;
+	}
+	
+	.command-palette {
+		border-radius: 0;
+		max-width: 100%;
+		height: 100%;
+		border: none;
 	}
 }
 
@@ -2095,6 +2139,50 @@
 	color: var(--text-muted);
 	font-size: 11px;
 	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+/* ── Mobile Bottom Nav ──────────────────────────────────────────────── */
+.mobile-bottom-nav {
+	display: none;
+}
+
+/* ── Animations ─────────────────────────────────────────────────────── */
+@keyframes bellBounce {
+	0%, 100% { transform: rotate(0deg); }
+	20% { transform: rotate(15deg); }
+	40% { transform: rotate(-10deg); }
+	60% { transform: rotate(5deg); }
+	80% { transform: rotate(-5deg); }
+}
+
+.bell-bounce {
+	animation: bellBounce 0.5s var(--ease-out);
+	transform-origin: top center;
+}
+
+@keyframes cardEnter {
+	0% { opacity: 0; transform: translateY(16px) scale(0.98); }
+	100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.card-enter {
+	animation: cardEnter var(--duration-normal) var(--ease-out) forwards;
+}
+
+@keyframes toastProgress {
+	0% { transform: scaleX(1); }
+	100% { transform: scaleX(0); }
+}
+
+.toast-progress {
+	position: absolute;
+	bottom: 0;
+	left: 0;
+	height: 3px;
+	background: var(--accent);
+	width: 100%;
+	transform-origin: left;
+	animation: toastProgress 4s linear forwards;
 }
 
 @media (prefers-reduced-motion: reduce) {

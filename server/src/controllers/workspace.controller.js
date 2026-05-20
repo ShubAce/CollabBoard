@@ -346,17 +346,32 @@ export const getMessages = async (req, res, next) => {
 		const before = req.query.before || null;
 		const threadId = req.query.threadId || null;
 
-		let channel = await Channel.findOne({ workspace: req.params.workspaceId, name: "general" });
-		if (!channel) {
-			channel = await Channel.create({
-				workspace: req.params.workspaceId,
-				name: "general",
-				description: "General team discussion",
-				createdBy: req.user._id,
-			});
+		let channelId = req.query.channelId;
+		let channel;
+
+		if (!channelId) {
+			channel = await Channel.findOne({ workspace: req.params.workspaceId, name: "general" });
+			if (!channel) {
+				channel = await Channel.create({
+					workspace: req.params.workspaceId,
+					name: "general",
+					description: "General team discussion",
+					createdBy: req.user._id,
+				});
+			}
+			channelId = channel._id;
+		} else {
+			// Verify channel exists and user has access
+			channel = await Channel.findOne({ _id: channelId, workspace: req.params.workspaceId });
+			if (!channel) {
+				return res.status(404).json({ message: "Channel not found" });
+			}
+			if (channel.isPrivate && (!channel.members || !channel.members.includes(req.user._id))) {
+				return res.status(403).json({ message: "Not authorized to view this channel" });
+			}
 		}
 
-		const filter = { workspace: req.params.workspaceId, channel: channel._id };
+		const filter = { workspace: req.params.workspaceId, channel: channelId };
 		if (threadId) {
 			filter.threadId = threadId;
 		} else {
@@ -368,9 +383,88 @@ export const getMessages = async (req, res, next) => {
 
 		return res.status(200).json({
 			messages: messages.reverse(),
+			channel,
 			hasMore: messages.length === limit,
 			nextCursor: messages[0]?._id || null,
 		});
+	} catch (err) {
+		return next(err);
+	}
+};
+
+export const listChannels = async (req, res, next) => {
+	try {
+		// Lazy create default channels if they don't exist
+		let channels = await Channel.find({
+			workspace: req.params.workspaceId,
+			$or: [{ isPrivate: false }, { isPrivate: { $exists: false } }, { members: req.user._id }],
+		}).sort({ createdAt: 1 });
+
+		const hasGeneral = channels.some(c => c.name === "general");
+		const hasAnnouncements = channels.some(c => c.name === "announcements");
+
+		let created = false;
+		if (!hasGeneral) {
+			await Channel.create({
+				workspace: req.params.workspaceId,
+				name: "general",
+				description: "General team discussion",
+				createdBy: req.user._id,
+			});
+			created = true;
+		}
+		if (!hasAnnouncements) {
+			await Channel.create({
+				workspace: req.params.workspaceId,
+				name: "announcements",
+				description: "Important team announcements",
+				isReadOnly: true,
+				createdBy: req.user._id,
+			});
+			created = true;
+		}
+
+		if (created) {
+			channels = await Channel.find({
+				workspace: req.params.workspaceId,
+				$or: [{ isPrivate: false }, { isPrivate: { $exists: false } }, { members: req.user._id }],
+			}).sort({ createdAt: 1 });
+		}
+
+		return res.status(200).json(channels);
+	} catch (err) {
+		return next(err);
+	}
+};
+
+export const createDirectMessage = async (req, res, next) => {
+	try {
+		const targetUserId = req.body.userId;
+		if (!targetUserId) {
+			return res.status(400).json({ message: "Target user ID is required" });
+		}
+
+		if (targetUserId === req.user._id.toString()) {
+			return res.status(400).json({ message: "Cannot create a direct message with yourself" });
+		}
+
+		// Sort IDs to create a consistent channel name
+		const members = [req.user._id.toString(), targetUserId].sort();
+		const name = `dm_${members[0]}_${members[1]}`;
+
+		let channel = await Channel.findOne({ workspace: req.params.workspaceId, name });
+
+		if (!channel) {
+			channel = await Channel.create({
+				workspace: req.params.workspaceId,
+				name,
+				isPrivate: true,
+				members: members,
+				createdBy: req.user._id,
+			});
+		}
+
+		return res.status(200).json(channel);
 	} catch (err) {
 		return next(err);
 	}

@@ -69,6 +69,7 @@ export default function AppShell() {
 	const [workspace, setWorkspace] = useState(null);
 	const [workspaces, setWorkspaces] = useState([]);
 	const [boards, setBoards] = useState([]);
+	const [channels, setChannels] = useState([]);
 	const [fallbackWorkspaceId, setFallbackWorkspaceId] = useState(null);
 	const [sidebarOpen, setSidebarOpen] = useState(false);
 	const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -143,6 +144,7 @@ export default function AppShell() {
 		if (!activeWorkspaceId || !accessToken) {
 			setWorkspace(null);
 			setBoards([]);
+			setChannels([]);
 			return;
 		}
 		let active = true;
@@ -167,6 +169,13 @@ export default function AppShell() {
 			})
 			.catch(() => {
 				if (active) setBoards([]);
+			});
+		api.get(`/workspaces/${activeWorkspaceId}/channels`)
+			.then(({ data }) => {
+				if (active) setChannels(Array.isArray(data) ? data : []);
+			})
+			.catch(() => {
+				if (active) setChannels([]);
 			});
 		return () => {
 			active = false;
@@ -297,18 +306,19 @@ export default function AppShell() {
 			]
 		: [];
 
-	const channelItems = activeWorkspaceId
-		? [
-				{ key: "general", label: "general", to: `/app/workspaces/${activeWorkspaceId}/chat` },
-				{ key: "announcements", label: "announcements", to: `/app/workspaces/${activeWorkspaceId}/chat` },
-			]
-		: [];
+	const channelItems = channels
+		.filter((c) => !c.isPrivate)
+		.map((c) => ({
+			key: c._id,
+			label: c.name,
+			to: `/app/workspaces/${activeWorkspaceId}/chat?channelId=${c._id}`,
+			isReadOnly: c.isReadOnly,
+		}));
 
 	const dmItems = workspace?.members
 		? workspace.members
 				.map((member) => member.user)
 				.filter((member) => member && member._id !== user?._id)
-				.slice(0, 3)
 		: [];
 
 	const workspaceDotColor = workspace?.color || getAvatarColor(workspace?.name || "");
@@ -346,56 +356,62 @@ export default function AppShell() {
 					</button>
 
 					{switcherOpen && (
-						<div
-							className="dropdown"
-							style={{ top: "calc(100% + 8px)", left: 12, right: 12 }}
-						>
-							{workspaces.map((ws, index) => (
-								<button
-									key={ws._id}
-									type="button"
+						<>
+							<div
+								style={{ position: "fixed", inset: 0, zIndex: 999 }}
+								onClick={() => setSwitcherOpen(false)}
+							/>
+							<div
+								className="dropdown"
+								style={{ position: "fixed", top: 60, left: 12, width: 240, zIndex: 1000 }}
+							>
+								{workspaces.map((ws, index) => (
+									<button
+										key={ws._id}
+										type="button"
+										className="dropdown-item"
+										onClick={() => {
+											setSwitcherOpen(false);
+											navigate(`/app/workspaces/${ws._id}`);
+										}}
+										style={{ justifyContent: "space-between" }}
+									>
+										<span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+											<span
+												style={{
+													width: 14,
+													height: 14,
+													borderRadius: "var(--r-sm)",
+													background: ws.color || getAvatarColor(ws.name || String(index)),
+												}}
+											/>
+											{ws.name}
+										</span>
+										{activeWorkspaceId === ws._id && (
+											<Icon
+												name="check"
+												size={14}
+											/>
+										)}
+									</button>
+								))}
+								<div style={{ height: 1, background: "var(--border-subtle)", margin: "4px 0" }} />
+								<Link
+									to="/app/workspaces"
 									className="dropdown-item"
-									onClick={() => {
-										setSwitcherOpen(false);
-										navigate(`/app/workspaces/${ws._id}`);
-									}}
-									style={{ justifyContent: "space-between" }}
+									onClick={() => setSwitcherOpen(false)}
 								>
-									<span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-										<span
-											style={{
-												width: 14,
-												height: 14,
-												borderRadius: "var(--r-sm)",
-												background: ws.color || getAvatarColor(ws.name || String(index)),
-											}}
-										/>
-										{ws.name}
-									</span>
-									{activeWorkspaceId === ws._id && (
-										<Icon
-											name="check"
-											size={14}
-										/>
-									)}
-								</button>
-							))}
-							<div style={{ height: 1, background: "var(--border-subtle)", margin: "4px 0" }} />
-							<Link
-								to="/app/workspaces"
-								className="dropdown-item"
-								onClick={() => setSwitcherOpen(false)}
-							>
-								Browse all workspaces
-							</Link>
-							<Link
-								to="/app/workspaces/new"
-								className="dropdown-item"
-								onClick={() => setSwitcherOpen(false)}
-							>
-								Create new workspace
-							</Link>
-						</div>
+									Browse all workspaces
+								</Link>
+								<Link
+									to="/app/workspaces/new"
+									className="dropdown-item"
+									onClick={() => setSwitcherOpen(false)}
+								>
+									Create new workspace
+								</Link>
+							</div>
+						</>
 					)}
 				</div>
 
@@ -556,7 +572,7 @@ export default function AppShell() {
 									>
 										<span style={{ color: "var(--text-muted)" }}>#</span>
 										<span style={{ flex: 1 }}>{channel.label}</span>
-										{channel.key === "announcements" && <span className="badge badge-muted">Read-only</span>}
+										{channel.isReadOnly && <span className="badge badge-muted">Read-only</span>}
 									</NavLink>
 								))}
 							</div>
@@ -600,14 +616,14 @@ export default function AppShell() {
 									<button
 										key={member._id}
 										type="button"
-										className="sidebar-link disabled"
-										aria-disabled
+										className="sidebar-link"
+										onClick={() => navigate(`/app/workspaces/${activeWorkspaceId}/chat?dm=${member._id}`)}
 									>
 										<Avatar
 											user={member}
 											size="xs"
 										/>
-										<span style={{ flex: 1 }}>{member.name}</span>
+										<span style={{ flex: 1, textAlign: "left" }}>{member.name}</span>
 									</button>
 								))}
 							</div>
@@ -745,7 +761,7 @@ export default function AppShell() {
 					</div>
 
 					<div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-secondary)" }}>
-						{activeWorkspaceId ? (
+						{workspaceId ? (
 							<>
 								<Link
 									to="/app/workspaces"
@@ -755,7 +771,7 @@ export default function AppShell() {
 								</Link>
 								<span>/</span>
 								<Link
-									to={`/app/workspaces/${activeWorkspaceId}`}
+									to={`/app/workspaces/${workspaceId}`}
 									style={{ color: "var(--text-primary)", fontWeight: 600, textDecoration: "none" }}
 								>
 									{workspace?.name || "Workspace"}
@@ -764,7 +780,7 @@ export default function AppShell() {
 								<span style={{ color: "var(--text-primary)", fontWeight: 600 }}>{pageLabel}</span>
 							</>
 						) : (
-							<span style={{ color: "var(--text-primary)", fontWeight: 600 }}>CollabBoard</span>
+							<span style={{ color: "var(--text-primary)", fontWeight: 600 }}>{pageLabel === "Home" ? "CollabBoard" : pageLabel}</span>
 						)}
 					</div>
 
@@ -918,7 +934,7 @@ export default function AppShell() {
 				</header>
 
 				<main className="content-area fade-in">
-					<Outlet />
+					<Outlet context={{ workspace }} />
 				</main>
 				
 				{/* Mobile Bottom Nav */}

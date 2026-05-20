@@ -57,19 +57,38 @@ const resolveMentionTargets = (tokens, members) => {
 };
 
 export const registerChatHandlers = (io, socket) => {
-	socket.on("chat:send", async ({ workspaceId, content, threadId }) => {
+	socket.on("chat:send", async ({ workspaceId, channelId, content, threadId }) => {
 		if (!workspaceId || !content?.trim()) return;
 
 		let populated;
 		try {
-			let channel = await Channel.findOne({ workspace: workspaceId, name: "general" });
-			if (!channel) {
-				channel = await Channel.create({
-					workspace: workspaceId,
-					name: "general",
-					description: "General team discussion",
-					createdBy: socket.userId,
-				});
+			let channel;
+			if (!channelId) {
+				channel = await Channel.findOne({ workspace: workspaceId, name: "general" });
+				if (!channel) {
+					channel = await Channel.create({
+						workspace: workspaceId,
+						name: "general",
+						description: "General team discussion",
+						createdBy: socket.userId,
+					});
+				}
+			} else {
+				channel = await Channel.findOne({ _id: channelId, workspace: workspaceId });
+				if (!channel) return;
+
+				if (channel.isPrivate && (!channel.members || !channel.members.includes(socket.userId))) {
+					return; // Unauthorized
+				}
+
+				if (channel.isReadOnly) {
+					const ws = await Workspace.findById(workspaceId);
+					if (!ws) return;
+					const member = ws.members.find((m) => m.user.toString() === socket.userId.toString());
+					if (!member || (member.role !== "admin" && member.role !== "owner")) {
+						return; // Only admins and owners can post in read-only channels
+					}
+				}
 			}
 
 			// Persist message to MongoDB

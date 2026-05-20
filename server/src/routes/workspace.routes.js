@@ -9,6 +9,8 @@ import {
 	listWorkspaces,
 	removeMember,
 	updateWorkspace,
+	listChannels,
+	createDirectMessage,
 } from "../controllers/workspace.controller.js";
 import { listPendingInvites, revokeInvite, sendInvite } from "../controllers/invite.controller.js";
 import { checkRole, checkWorkspaceMember } from "../middleware/checkRole.js";
@@ -30,6 +32,7 @@ router.patch("/:workspaceId/members/:userId", checkRole("admin"), changeMemberRo
 router.delete("/:workspaceId/members/:userId", checkRole("admin"), removeMember);
 router.get("/:workspaceId/activity", listActivity);
 router.get("/:workspaceId/messages", getMessages);
+router.get("/:workspaceId/channels", listChannels);
+router.post("/:workspaceId/dms", createDirectMessage);
 
 export default router;
-

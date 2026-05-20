@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@emoji-mart/data": "^1.2.1",
     "@hello-pangea/dnd": "^18.0.1",
     "@socket.io/redis-adapter": "^8.3.0",
     "@tailwindcss/vite": "^4.3.0",
@@ -19,6 +20,7 @@
     "cloudinary": "^2.10.0",
     "cors": "^2.8.6",
     "dayjs": "^1.11.20",
+    "emoji-mart": "^5.6.0",
     "express": "^5.2.1",
     "express-rate-limit": "^8.5.2",
     "ioredis": "^5.10.1",

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams, useOutletContext } from "react-router-dom";
 import api from "../api/axios";
 import Icon from "../components/ui/Icon.jsx";
 import { useToast } from "../hooks/useToast.jsx";
@@ -392,10 +392,16 @@ function TypingDots({ names }) {
 /* ── Main page ────────────────────────────────────────────────── */
 export default function ChatPage() {
 	const { workspaceId } = useParams();
+	const [searchParams, setSearchParams] = useSearchParams();
+	const { workspace } = useOutletContext();
 	const accessToken = useAuthStore((s) => s.accessToken);
 	const currentUser = useAuthStore((s) => s.user);
 	const toast = useToast();
 
+	const channelIdParam = searchParams.get("channelId");
+	const dmUserId = searchParams.get("dm");
+
+	const [activeChannel, setActiveChannel] = useState(null);
 	const [messages, setMessages] = useState([]);
 	const [hasMore, setHasMore] = useState(false);
 	const [nextCursor, setNextCursor] = useState(null);
@@ -414,22 +420,38 @@ export default function ChatPage() {
 	useEffect(() => {
 		if (!workspaceId) return;
 		let active = true;
-		api
-			.get(`/workspaces/${workspaceId}/messages?limit=60`)
-			.then(({ data }) => {
+
+		const fetchMessages = (cId) => {
+			const url = cId ? `/workspaces/${workspaceId}/messages?limit=60&channelId=${cId}` : `/workspaces/${workspaceId}/messages?limit=60`;
+			api.get(url).then(({ data }) => {
 				if (!active) return;
 				setMessages(data.messages);
+				setActiveChannel(data.channel);
 				setHasMore(data.hasMore);
 				setNextCursor(data.nextCursor);
 				setStatus("ready");
-			})
-			.catch(() => {
+			}).catch(() => {
 				if (active) setStatus("error");
 			});
+		};
+
+		if (dmUserId) {
+			api.post(`/workspaces/${workspaceId}/dms`, { userId: dmUserId })
+				.then(({ data }) => {
+					if (!active) return;
+					setSearchParams({ channelId: data._id }, { replace: true });
+				})
+				.catch(() => {
+					if (active) setStatus("error");
+				});
+		} else {
+			fetchMessages(channelIdParam);
+		}
+
 		return () => {
 			active = false;
 		};
-	}, [workspaceId]);
+	}, [workspaceId, channelIdParam, dmUserId, setSearchParams]);
 
 	/* Scroll to bottom on first load */
 	useEffect(() => {
@@ -447,7 +469,9 @@ export default function ChatPage() {
 		socket.emit("join:workspace", { workspaceId });
 
 		const handleMessage = ({ message }) => {
-			if (message.threadId) return; // thread replies handled in ThreadPanel
+			if (message.threadId) return;
+			// Only show if it matches the current channel
+			if (message.channel !== activeChannel?._id) return;
 			setMessages((prev) => [...prev, message]);
 			setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
 		};
@@ -505,7 +529,7 @@ export default function ChatPage() {
 		if (!content || !workspaceId || !accessToken) return;
 		const socket = getSocket(accessToken);
 		if (!socket) return;
-		socket.emit("chat:send", { workspaceId, content });
+		socket.emit("chat:send", { workspaceId, channelId: activeChannel?._id, content });
 		setInput("");
 		inputRef.current?.focus();
 	};
@@ -576,7 +600,8 @@ export default function ChatPage() {
 		if (!hasMore || loadingMore || !nextCursor) return;
 		setLoadingMore(true);
 		try {
-			const { data } = await api.get(`/workspaces/${workspaceId}/messages?limit=60&before=${nextCursor}`);
+			const url = activeChannel?._id ? `/workspaces/${workspaceId}/messages?limit=60&channelId=${activeChannel._id}&before=${nextCursor}` : `/workspaces/${workspaceId}/messages?limit=60&before=${nextCursor}`;
+			const { data } = await api.get(url);
 			setMessages((prev) => [...data.messages, ...prev]);
 			setHasMore(data.hasMore);
 			setNextCursor(data.nextCursor);
@@ -600,6 +625,10 @@ export default function ChatPage() {
 		return acc;
 	}, []);
 
+	const currentMember = workspace?.members?.find((m) => (m.user?._id || m.user) === currentUser?._id);
+	const role = currentMember?.role || "member";
+	const canPost = !activeChannel?.isReadOnly || role === "admin" || role === "owner";
+
 	return (
 		<div className="chat-layout fade-in">
 			{/* Main chat area */}
@@ -607,10 +636,10 @@ export default function ChatPage() {
 				{/* Header */}
 				<div className="chat-header">
 					<div className="chat-header-left">
-						<span style={{ fontSize: 18, color: "var(--text-muted)" }}>#</span>
+						<span style={{ fontSize: 18, color: "var(--text-muted)" }}>{activeChannel?.isPrivate ? "🔒" : "#"}</span>
 						<div>
-							<div className="chat-header-name">general</div>
-							<div className="chat-header-desc">All workspace members</div>
+							<div className="chat-header-name">{activeChannel?.name || "..."}</div>
+							<div className="chat-header-desc">{activeChannel?.description || "All workspace members"}</div>
 						</div>
 					</div>
 					<div className="chat-header-right">
@@ -629,12 +658,6 @@ export default function ChatPage() {
 							<span style={{ fontSize: 12, fontWeight: 600, color: "var(--green)" }}>Live</span>
 						</div>
 					</div>
-				</div>
-
-				<div style={{ padding: "8px 20px", background: "var(--bg-surface-2)", borderBottom: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-					<span style={{ color: "var(--accent)" }}>📌</span>
-					<span style={{ fontWeight: 600, color: "var(--text-primary)" }}>1 pinned message</span>
-					<button type="button" className="btn btn-ghost btn-sm" style={{ padding: "0 6px", height: 22 }}>View</button>
 				</div>
 
 				{/* Messages */}
@@ -716,43 +739,52 @@ export default function ChatPage() {
 
 				{/* Input */}
 				<div className="chat-input-area">
-					<div className="chat-input-box">
-						<textarea
-							ref={inputRef}
-							id="chat-input"
-							className="chat-input-textarea"
-							value={input}
-							onChange={handleInputChange}
-							onKeyDown={handleKey}
-							rows={1}
-							placeholder="Message #general..."
-						/>
-						<div className="chat-input-footer">
-							<span className="chat-input-hint">Enter to send · Shift+Enter for new line</span>
-							<button
-								type="button"
-								onClick={handleSend}
-								disabled={!input.trim()}
-								aria-label="Send message"
-								style={{
-									width: 30,
-									height: 30,
-									borderRadius: "var(--r-md)",
-									background: input.trim() ? "var(--accent)" : "var(--bg-surface-3)",
-									border: "none",
-									cursor: input.trim() ? "pointer" : "not-allowed",
-									display: "flex",
-									alignItems: "center",
-									justifyContent: "center",
-									color: "#fff",
-									transition: "all 0.15s",
-									flexShrink: 0,
-								}}
-							>
-								<Icon name="send" size={14} />
-							</button>
+					{!canPost ? (
+						<div className="chat-readonly-banner" style={{ textAlign: "center", padding: "12px", background: "var(--bg-card)", border: "1px solid var(--border-subtle)", borderRadius: "var(--r-md)", color: "var(--text-muted)" }}>
+							<Icon name="lock" size={14} style={{ marginRight: 8, verticalAlign: "middle", marginBottom: -2 }} />
+							Only admins and owners can post in this channel.
 						</div>
-					</div>
+					) : (
+						<div className="chat-input-box">
+							<textarea
+								ref={inputRef}
+								id="chat-input"
+								className="chat-input-textarea"
+								value={input}
+								onChange={handleInputChange}
+								onKeyDown={handleKey}
+								rows={1}
+								placeholder={`Message ${activeChannel?.isPrivate ? "user" : "#" + (activeChannel?.name || "channel")}...`}
+							/>
+							<div className="chat-input-footer">
+								<span className="chat-input-hint">Enter to send · Shift+Enter for new line</span>
+								<button
+									type="button"
+									onClick={handleSend}
+									disabled={!input.trim()}
+									aria-label="Send message"
+									style={{
+										width: 30,
+										height: 30,
+										borderRadius: "var(--r-md)",
+										background: input.trim() ? "var(--accent)" : "var(--bg-surface-3)",
+										border: "none",
+										cursor: input.trim() ? "pointer" : "not-allowed",
+										display: "flex",
+										alignItems: "center",
+										justifyContent: "center",
+										color: "#fff",
+										transition: "all var(--duration-fast) var(--ease-out)",
+									}}
+								>
+									<Icon
+										name="send"
+										size={14}
+									/>
+								</button>
+							</div>
+						</div>
+					)}
 				</div>
 			</div>
 

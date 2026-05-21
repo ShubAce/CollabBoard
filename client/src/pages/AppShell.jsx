@@ -119,6 +119,10 @@ export default function AppShell() {
 	}, [workspaceId]);
 
 	useEffect(() => {
+		setSidebarOpen(false);
+	}, [location.pathname]);
+
+	useEffect(() => {
 		try {
 			const stored = localStorage.getItem("cb:sidebar_sections");
 			if (stored) {
@@ -360,6 +364,12 @@ export default function AppShell() {
 
 	return (
 		<div className="app-layout">
+			{sidebarOpen && (
+				<div 
+					className="sidebar-overlay"
+					onClick={() => setSidebarOpen(false)}
+				/>
+			)}
 			<aside
 				className="sidebar"
 				style={{ display: showSidebar ? "flex" : "none" }}
@@ -792,8 +802,7 @@ export default function AppShell() {
 					<button
 						type="button"
 						onClick={() => setSidebarOpen((open) => !open)}
-						className="btn btn-ghost btn-sm"
-						style={{ display: "none" }}
+						className="btn btn-ghost btn-sm mobile-hamburger"
 					>
 						<Icon
 							name="menu"
@@ -804,7 +813,7 @@ export default function AppShell() {
 					<div className="topbar-group">
 						<button
 							type="button"
-							className="btn btn-ghost btn-sm"
+							className="btn btn-ghost btn-sm mobile-nav-arrows"
 							onClick={() => navigate(-1)}
 							aria-label="Go back"
 						>
@@ -815,7 +824,7 @@ export default function AppShell() {
 						</button>
 						<button
 							type="button"
-							className="btn btn-ghost btn-sm"
+							className="btn btn-ghost btn-sm mobile-nav-arrows"
 							onClick={() => navigate(1)}
 							aria-label="Go forward"
 						>

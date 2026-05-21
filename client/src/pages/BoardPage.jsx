@@ -1300,6 +1300,7 @@ export default function BoardPage() {
 									<div
 										ref={provided.innerRef}
 										{...provided.droppableProps}
+										className="board-columns-container"
 										style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 8 }}
 									>
 										{filteredColumns.map((column, index) => {

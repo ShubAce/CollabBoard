@@ -344,7 +344,25 @@ function ThreadPanel({ parentMsg, currentUser, onClose }) {
 		if (!content) return;
 		const socket = getSocket(accessToken);
 		if (!socket) return;
+		
+		// Send reply
 		socket.emit("chat:send", { workspaceId, content, threadId: parentMsg._id });
+		
+		// Optimistic Update: Push temporary reply instantly!
+		const tempId = `temp-${Date.now()}`;
+		const tempReply = {
+			_id: tempId,
+			workspace: workspaceId,
+			sender: currentUser,
+			content,
+			type: "text",
+			createdAt: new Date().toISOString(),
+			threadId: parentMsg._id,
+			isOptimistic: true,
+		};
+		setReplies((prev) => [...prev, tempReply]);
+		setTimeout(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), 20);
+		
 		setInput("");
 	};
 
@@ -355,18 +373,27 @@ function ThreadPanel({ parentMsg, currentUser, onClose }) {
 		}
 	};
 
+	const parentMsgRef = useRef(parentMsg);
+	useEffect(() => {
+		parentMsgRef.current = parentMsg;
+	}, [parentMsg]);
+
 	useEffect(() => {
 		const socket = getSocket(accessToken);
-		if (!socket || !parentMsg) return;
+		if (!socket) return;
 		const handle = ({ message }) => {
-			if (message.threadId === parentMsg._id) {
-				setReplies((prev) => [...prev, message]);
+			if (message.threadId === parentMsgRef.current?._id) {
+				setReplies((prev) => {
+					// Remove the optimistic temporary message from the state
+					const filtered = prev.filter((r) => !r.isOptimistic || r.content !== message.content);
+					return [...filtered, message];
+				});
 				setTimeout(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
 			}
 		};
 		socket.on("chat:message", handle);
 		return () => socket.off("chat:message", handle);
-	}, [accessToken, parentMsg?._id]);
+	}, [accessToken]);
 
 	if (!parentMsg) return null;
 
@@ -498,6 +525,11 @@ export default function ChatPage() {
 	const isFirstLoad = useRef(true);
 	const inputRef = useRef(null);
 
+	const activeChannelRef = useRef(activeChannel);
+	useEffect(() => {
+		activeChannelRef.current = activeChannel;
+	}, [activeChannel]);
+
 	/* Load messages */
 	useEffect(() => {
 		if (!workspaceId) return;
@@ -553,8 +585,12 @@ export default function ChatPage() {
 		const handleMessage = ({ message }) => {
 			if (message.threadId) return;
 			// Only show if it matches the current channel
-			if (message.channel !== activeChannel?._id) return;
-			setMessages((prev) => [...prev, message]);
+			if (message.channel !== activeChannelRef.current?._id) return;
+			setMessages((prev) => {
+				// Remove the optimistic temporary message from the state
+				const filtered = prev.filter((m) => !m.isOptimistic || m.content !== message.content);
+				return [...filtered, message];
+			});
 			setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
 		};
 
@@ -592,17 +628,29 @@ export default function ChatPage() {
 			}
 		};
 
+		const handleThreadUpdated = ({ messageId, threadCount, lastReplyAt }) => {
+			setMessages((prev) =>
+				prev.map((m) =>
+					m._id === messageId
+						? { ...m, threadCount, lastReplyAt }
+						: m
+				)
+			);
+		};
+
 		socket.on("chat:message", handleMessage);
 		socket.on("chat:reaction_updated", handleReaction);
 		socket.on("chat:deleted", handleDeleted);
 		socket.on("chat:edited", handleEdited);
 		socket.on("chat:typing", handleTyping);
+		socket.on("chat:thread_updated", handleThreadUpdated);
 		return () => {
 			socket.off("chat:message", handleMessage);
 			socket.off("chat:reaction_updated", handleReaction);
 			socket.off("chat:deleted", handleDeleted);
 			socket.off("chat:edited", handleEdited);
 			socket.off("chat:typing", handleTyping);
+			socket.off("chat:thread_updated", handleThreadUpdated);
 		};
 	}, [workspaceId, accessToken, currentUser]);
 
@@ -611,7 +659,26 @@ export default function ChatPage() {
 		if (!content || !workspaceId || !accessToken) return;
 		const socket = getSocket(accessToken);
 		if (!socket) return;
+		
+		// Emit standard socket event
 		socket.emit("chat:send", { workspaceId, channelId: activeChannel?._id, content });
+		
+		// Optimistic Update: Push temporary message instantly!
+		const tempId = `temp-${Date.now()}`;
+		const tempMessage = {
+			_id: tempId,
+			workspace: workspaceId,
+			channel: activeChannel?._id,
+			sender: currentUser,
+			content,
+			type: "text",
+			createdAt: new Date().toISOString(),
+			isOptimistic: true,
+		};
+		
+		setMessages((prev) => [...prev, tempMessage]);
+		setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 20);
+		
 		setInput("");
 		inputRef.current?.focus();
 	};

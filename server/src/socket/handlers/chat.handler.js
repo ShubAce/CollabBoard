@@ -103,10 +103,18 @@ export const registerChatHandlers = (io, socket) => {
 
 			// If it's a thread reply, update parent message
 			if (threadId) {
-				await Message.findByIdAndUpdate(threadId, {
-					$inc: { threadCount: 1 },
-					lastReplyAt: new Date(),
-				});
+				const updatedParent = await Message.findByIdAndUpdate(
+					threadId,
+					{ $inc: { threadCount: 1 }, lastReplyAt: new Date() },
+					{ new: true }
+				);
+				if (updatedParent) {
+					io.to(`ws:${workspaceId}`).emit("chat:thread_updated", {
+						messageId: threadId,
+						threadCount: updatedParent.threadCount,
+						lastReplyAt: updatedParent.lastReplyAt,
+					});
+				}
 			}
 
 			populated = await message.populate("sender", "name avatar");

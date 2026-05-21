@@ -297,7 +297,7 @@ function MessageRow({ msg, prevMsg, currentUser, onReact, onReply, onDelete, onE
 			{emojiOpen && pickerCoords && createPortal(
 				<div 
 					style={{ 
-						position: "absolute", 
+						position: "fixed", 
 						top: pickerCoords.top, 
 						left: pickerCoords.left, 
 						zIndex: 99999 

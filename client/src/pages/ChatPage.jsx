@@ -61,10 +61,7 @@ function renderContent(content, currentUser) {
 			<span
 				key={`m-${start}`}
 				style={{
-					color: isSelf ? "#fff" : "var(--accent)",
-					background: isSelf ? "var(--accent)" : "transparent",
-					padding: isSelf ? "1px 5px" : 0,
-					borderRadius: isSelf ? 4 : 0,
+					color: isSelf ? "#8af1a5ff" : "#51f0a5ff",
 					fontWeight: 600,
 				}}
 			>
@@ -89,7 +86,6 @@ const fmtDate = (iso) => {
 	return d.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
 };
 
-const QUICK_EMOJIS = ["👍", "✅", "🔥", "👀", "🎉", "💯", "❤️", "🤔", "😄", "🚀"];
 
 function isSameMinute(a, b) {
 	const da = new Date(a);

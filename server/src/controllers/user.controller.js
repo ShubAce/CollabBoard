@@ -6,6 +6,12 @@ import Workspace from "../models/Workspace.js";
 const updateMeSchema = z.object({
 	name: z.string().trim().min(1, "Name is required").optional(),
 	avatar: z.string().trim().url("Avatar must be a valid URL").or(z.literal("")).optional(),
+	status: z.object({
+		id: z.string(),
+		label: z.string(),
+		icon: z.string(),
+		color: z.string()
+	}).optional(),
 });
 
 const changePasswordSchema = z.object({
@@ -35,6 +41,7 @@ export const updateMe = async (req, res, next) => {
 
 		if (parsed.data.name) user.name = parsed.data.name;
 		if (parsed.data.avatar !== undefined) user.avatar = parsed.data.avatar || null;
+		if (parsed.data.status !== undefined) user.status = parsed.data.status || null;
 		await user.save();
 
 		return res.status(200).json(user);

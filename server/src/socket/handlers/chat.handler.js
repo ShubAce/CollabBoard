@@ -209,22 +209,47 @@ export const registerChatHandlers = (io, socket) => {
 			if (!message) return;
 
 			const uid = socket.userId;
-			const reactions = [...(message.reactions || [])];
-			const idx = reactions.findIndex((r) => r.emoji === emoji);
+			let reactions = [...(message.reactions || [])];
 
-			if (idx >= 0) {
-				const users = reactions[idx].users || [];
-				if (users.includes(uid)) {
-					// Remove reaction
-					reactions[idx].users = users.filter((u) => u.toString() !== uid.toString());
-					if (!reactions[idx].users.length) reactions.splice(idx, 1);
-				} else {
-					// Add reaction
-					reactions[idx].users.push(uid);
+			// Find if the user has a reaction to any emoji
+			let existingEmojiIndex = -1;
+			for (let i = 0; i < reactions.length; i++) {
+				if (reactions[i].users.some((u) => u.toString() === uid.toString())) {
+					existingEmojiIndex = i;
+					break;
+				}
+			}
+
+			if (existingEmojiIndex >= 0) {
+				const existingEmoji = reactions[existingEmojiIndex].emoji;
+				
+				// Remove user from the existing reaction
+				reactions[existingEmojiIndex].users = reactions[existingEmojiIndex].users.filter(
+					(u) => u.toString() !== uid.toString()
+				);
+				
+				// Clean up the reaction if no users are left
+				if (reactions[existingEmojiIndex].users.length === 0) {
+					reactions.splice(existingEmojiIndex, 1);
+				}
+
+				// If they clicked a DIFFERENT emoji, add it
+				if (existingEmoji !== emoji) {
+					const newIdx = reactions.findIndex((r) => r.emoji === emoji);
+					if (newIdx >= 0) {
+						reactions[newIdx].users.push(uid);
+					} else {
+						reactions.push({ emoji, users: [uid] });
+					}
 				}
 			} else {
-				// New emoji reaction
-				reactions.push({ emoji, users: [uid] });
+				// No existing reaction, add the new emoji reaction
+				const newIdx = reactions.findIndex((r) => r.emoji === emoji);
+				if (newIdx >= 0) {
+					reactions[newIdx].users.push(uid);
+				} else {
+					reactions.push({ emoji, users: [uid] });
+				}
 			}
 
 			message.reactions = reactions;

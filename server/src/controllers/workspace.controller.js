@@ -124,8 +124,8 @@ export const createWorkspace = async (req, res, next) => {
 export const listWorkspaces = async (req, res, next) => {
 	try {
 		const workspaces = await Workspace.find({ "members.user": req.user._id })
-			.populate("members.user", "name email avatar")
-			.populate("owner", "name email avatar")
+			.populate("members.user", "name email avatar status")
+			.populate("owner", "name email avatar status")
 			.sort({ createdAt: -1 });
 
 		return res.status(200).json(workspaces.map((workspace) => attachViewerMeta(workspace, req.user._id)));
@@ -137,8 +137,8 @@ export const listWorkspaces = async (req, res, next) => {
 export const getWorkspace = async (req, res, next) => {
 	try {
 		const workspace = await Workspace.findById(req.params.workspaceId)
-			.populate("members.user", "name email avatar")
-			.populate("owner", "name email avatar");
+			.populate("members.user", "name email avatar status")
+			.populate("owner", "name email avatar status");
 		if (!workspace) {
 			return res.status(404).json({ message: "Workspace not found" });
 		}
@@ -170,8 +170,8 @@ export const updateWorkspace = async (req, res, next) => {
 
 		await workspace.save();
 		await workspace.populate([
-			{ path: "members.user", select: "name email avatar" },
-			{ path: "owner", select: "name email avatar" },
+			{ path: "members.user", select: "name email avatar status" },
+			{ path: "owner", select: "name email avatar status" },
 		]);
 		return res.status(200).json(attachViewerMeta(workspace, req.user._id));
 	} catch (err) {

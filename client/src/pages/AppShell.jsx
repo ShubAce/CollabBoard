@@ -48,13 +48,14 @@ const DEFAULT_SECTIONS = {
 };
 
 const STATUS_OPTIONS = [
-	{ id: "available", label: "Available", emoji: "🟢", color: "var(--green)" },
-	{ id: "busy", label: "Busy", emoji: "🔴", color: "var(--red)" },
-	{ id: "meeting", label: "In a meeting", emoji: "🗓", color: "var(--yellow)" },
-	{ id: "focus", label: "Focusing — do not disturb", emoji: "🎧", color: "var(--blue)" },
-	{ id: "vacation", label: "On vacation", emoji: "🌴", color: "var(--purple)" },
-	{ id: "wfh", label: "Working from home", emoji: "🏠", color: "var(--accent)" },
+	{ id: "available", label: "Available", icon: "check", color: "var(--green)" },
+	{ id: "busy", label: "Busy", icon: "alert", color: "var(--red)" },
+	{ id: "meeting", label: "In a meeting", icon: "users", color: "var(--yellow)" },
+	{ id: "focus", label: "Focusing — do not disturb", icon: "lock", color: "var(--blue)" },
+	{ id: "vacation", label: "On vacation", icon: "home", color: "var(--purple)" },
+	{ id: "wfh", label: "Working from home", icon: "home", color: "var(--accent)" },
 ];
+
 
 export default function AppShell() {
 	const navigate = useNavigate();
@@ -64,6 +65,7 @@ export default function AppShell() {
 	const user = useAuthStore((s) => s.user);
 	const accessToken = useAuthStore((s) => s.accessToken);
 	const clearAuth = useAuthStore((s) => s.clearAuth);
+	const setAuth = useAuthStore((s) => s.setAuth);
 
 	const [unreadCount, setUnreadCount] = useState(0);
 	const [workspace, setWorkspace] = useState(null);
@@ -79,7 +81,15 @@ export default function AppShell() {
 	const [commandOpen, setCommandOpen] = useState(false);
 	const [commandQuery, setCommandQuery] = useState("");
 	const [sections, setSections] = useState(DEFAULT_SECTIONS);
-	const [status, setStatus] = useState(STATUS_OPTIONS[0]);
+	const [status, setStatus] = useState(() => {
+		return user?.status || STATUS_OPTIONS[0];
+	});
+
+	useEffect(() => {
+		if (user?.status) {
+			setStatus(user.status);
+		}
+	}, [user]);
 
 	const userMenuRef = useRef(null);
 	const switcherRef = useRef(null);
@@ -87,6 +97,7 @@ export default function AppShell() {
 	const bellRef = useRef(null);
 	const commandInputRef = useRef(null);
 	const activeWorkspaceId = workspaceId || fallbackWorkspaceId;
+
 
 	useEffect(() => {
 		try {
@@ -257,6 +268,18 @@ export default function AppShell() {
 		}
 	};
 
+	const handleStatusChange = async (option) => {
+		setStatus(option);
+		setStatusMenuOpen(false);
+		try {
+			const { data } = await api.patch("/users/me", { status: option });
+			setAuth(data, accessToken);
+		} catch {
+			/* ignore — status is UI-only if API not available */
+		}
+	};
+
+
 	const toggleSection = (key) => {
 		setSections((prev) => ({ ...prev, [key]: !prev[key] }));
 	};
@@ -283,6 +306,7 @@ export default function AppShell() {
 					label: "Home",
 					icon: "home",
 					to: `/app/workspaces/${activeWorkspaceId}`,
+					end: true,
 				},
 				{
 					key: "search",
@@ -295,6 +319,7 @@ export default function AppShell() {
 					label: "My Work",
 					icon: "briefcase",
 					to: "/app/my-work",
+					end: true,
 				},
 				{
 					key: "notifications",
@@ -302,18 +327,27 @@ export default function AppShell() {
 					icon: "bell",
 					to: "/app/notifications",
 					badge: unreadCount,
+					end: true,
 				},
 			]
 		: [];
 
-	const channelItems = channels
-		.filter((c) => !c.isPrivate)
-		.map((c) => ({
-			key: c._id,
-			label: c.name,
-			to: `/app/workspaces/${activeWorkspaceId}/chat?channelId=${c._id}`,
-			isReadOnly: c.isReadOnly,
-		}));
+
+	const visibleChannels = channels.filter((ch) => !ch.name?.startsWith("dm_"));
+	const channelItems = activeWorkspaceId
+		? visibleChannels.length > 0
+			? visibleChannels.map((ch) => ({
+					key: ch._id,
+					label: ch.name,
+					to: `/app/workspaces/${activeWorkspaceId}/chat?channelId=${ch._id}`,
+					isReadOnly: ch.isReadOnly,
+			  }))
+			: [
+					{ key: "general", label: "general", to: `/app/workspaces/${activeWorkspaceId}/chat` },
+					{ key: "announcements", label: "announcements", to: `/app/workspaces/${activeWorkspaceId}/chat?channel=announcements` },
+			  ]
+		: [];
+
 
 	const dmItems = workspace?.members
 		? workspace.members
@@ -442,8 +476,10 @@ export default function AppShell() {
 											<NavLink
 												key={item.key}
 												to={item.to}
+												end={item.end}
 												className={({ isActive }) => `sidebar-link${isActive ? " active" : ""}`}
 											>
+
 												<Icon
 													name={item.icon}
 													size={14}
@@ -564,17 +600,34 @@ export default function AppShell() {
 								</button>
 							</div>
 							<div className={`sidebar-items${sections.channels ? "" : " collapsed"}`}>
-								{channelItems.map((channel) => (
-									<NavLink
-										key={channel.key}
-										to={channel.to}
-										className={({ isActive }) => `sidebar-link${isActive ? " active" : ""}`}
-									>
-										<span style={{ color: "var(--text-muted)" }}>#</span>
-										<span style={{ flex: 1 }}>{channel.label}</span>
-										{channel.isReadOnly && <span className="badge badge-muted">Read-only</span>}
-									</NavLink>
-								))}
+								{channelItems.map((channel) => {
+									const searchParams = new URLSearchParams(location.search);
+									const activeChannelId = searchParams.get("channelId");
+									const activeChannelParam = searchParams.get("channel");
+									
+									const isGeneral = channel.key === "general" || channel.label === "general";
+									
+									let isActive = false;
+									if (activeChannelId) {
+										isActive = activeChannelId === channel.key;
+									} else if (activeChannelParam) {
+										isActive = activeChannelParam === channel.key || activeChannelParam === channel.label;
+									} else {
+										isActive = isGeneral && location.pathname.endsWith("/chat");
+									}
+
+									return (
+										<Link
+											key={channel.key}
+											to={channel.to}
+											className={`sidebar-link${isActive ? " active" : ""}`}
+										>
+											<span style={{ color: "var(--text-muted)" }}>#</span>
+											<span style={{ flex: 1 }}>{channel.label}</span>
+											{channel.isReadOnly && <span className="badge badge-muted">Read-only</span>}
+										</Link>
+									);
+								})}
 							</div>
 						</div>
 					)}
@@ -612,20 +665,37 @@ export default function AppShell() {
 										No direct messages
 									</button>
 								)}
-								{dmItems.map((member) => (
-									<button
-										key={member._id}
-										type="button"
-										className="sidebar-link"
-										onClick={() => navigate(`/app/workspaces/${activeWorkspaceId}/chat?dm=${member._id}`)}
-									>
-										<Avatar
-											user={member}
-											size="xs"
-										/>
-										<span style={{ flex: 1, textAlign: "left" }}>{member.name}</span>
-									</button>
-								))}
+								{dmItems.map((member) => {
+									const searchParams = new URLSearchParams(location.search);
+									const activeChannelId = searchParams.get("channelId");
+									const dmChannel = channels.find((ch) => ch.name?.startsWith("dm_") && ch.name.includes(member._id) && ch.name.includes(user?._id));
+									const isActive = activeChannelId && dmChannel && activeChannelId === dmChannel._id;
+									return (
+										<Link
+											key={member._id}
+											to={`/app/workspaces/${activeWorkspaceId}/chat?dm=${member._id}`}
+											className={`sidebar-link${isActive ? " active" : ""}`}
+										>
+											<Avatar
+												user={member}
+												size="xs"
+											/>
+											<span style={{ flex: 1 }}>{member.name}</span>
+											{member.status && (
+												<span
+													style={{
+														width: 8,
+														height: 8,
+														borderRadius: "50%",
+														background: member.status.color || "var(--green)",
+														flexShrink: 0
+													}}
+													title={member.status.label}
+												/>
+											)}
+										</Link>
+									);
+								})}
 							</div>
 						</div>
 					)}
@@ -697,23 +767,19 @@ export default function AppShell() {
 						{statusMenuOpen && (
 						<div
 							className="dropdown"
-							style={{ bottom: "calc(100% + 8px)", left: 0, right: 0 }}
+							style={{ bottom: "calc(100% + 8px)", left: 0, right: 0, zIndex: 200 }}
 						>
-							<div style={{ padding: "8px 12px 4px", fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Set a status</div>
 							{STATUS_OPTIONS.map((option) => (
 								<button
 									key={option.id}
 									type="button"
-									className={`dropdown-item${status.id === option.id ? " active" : ""}`}
-									onClick={() => {
-										setStatus(option);
-										setStatusMenuOpen(false);
-									}}
+									className="dropdown-item"
+									onClick={() => handleStatusChange(option)}
 								>
-									<span style={{ fontSize: 14 }}>{option.emoji}</span>
-									<span>{option.label}</span>
-									{status.id === option.id && <Icon name="check" size={12} style={{ marginLeft: "auto", color: "var(--accent)" }} />}
+									<Icon name={option.icon} size={14} style={{ color: option.color }} />
+									<span style={{ marginLeft: 4 }}>{option.label}</span>
 								</button>
+
 							))}
 						</div>
 					)}
@@ -825,7 +891,7 @@ export default function AppShell() {
 						{bellOpen && (
 							<div
 								className="dropdown"
-								style={{ right: 0, top: "calc(100% + 8px)", minWidth: 220 }}
+								style={{ right: 0, top: "calc(100% + 8px)", minWidth: 220, zIndex: 200 }}
 							>
 								<div style={{ padding: "10px 12px", fontSize: 12, color: "var(--text-muted)" }}>
 									{unreadCount > 0 ? `${unreadCount} unread notifications` : "No new notifications"}
@@ -863,7 +929,7 @@ export default function AppShell() {
 						{userMenuOpen && (
 							<div
 								className="dropdown"
-								style={{ right: 0, top: "calc(100% + 8px)", minWidth: 240 }}
+								style={{ right: 0, top: "calc(100% + 8px)", minWidth: 220, zIndex: 200 }}
 							>
 								{/* User info header */}
 								<div style={{ padding: "14px 16px", borderBottom: "1px solid var(--border-subtle)" }}>
@@ -934,7 +1000,7 @@ export default function AppShell() {
 				</header>
 
 				<main className="content-area fade-in">
-					<Outlet context={{ workspace }} />
+					<Outlet context={{ workspace, workspaceId: activeWorkspaceId }} />
 				</main>
 				
 				{/* Mobile Bottom Nav */}

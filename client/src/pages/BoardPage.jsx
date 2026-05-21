@@ -284,6 +284,10 @@ function TaskPanel({ task, column, onClose, onSubTaskAdd, onSubTaskToggle, onSub
 	const [commentText, setCommentText] = useState("");
 	const [commentBusy, setCommentBusy] = useState(false);
 	const [commentsLoading, setCommentsLoading] = useState(false);
+	// Inline edit state
+	const [descEdit, setDescEdit] = useState(task.description || "");
+	const [titleEdit, setTitleEdit] = useState(task.title || "");
+	const [dueDateEdit, setDueDateEdit] = useState(task.dueDate ? task.dueDate.slice(0, 10) : "");
 	const due = getDueMeta(task.dueDate);
 	const labels = task.labels || [];
 	const attachments = task.attachments || [];
@@ -297,6 +301,13 @@ function TaskPanel({ task, column, onClose, onSubTaskAdd, onSubTaskToggle, onSub
 	const relationMap = useMemo(() => {
 		return new Map((relationOptions || []).map((item) => [item._id?.toString(), item]));
 	}, [relationOptions]);
+
+	// Sync local edits when task changes
+	useEffect(() => {
+		setDescEdit(task.description || "");
+		setTitleEdit(task.title || "");
+		setDueDateEdit(task.dueDate ? task.dueDate.slice(0, 10) : "");
+	}, [task._id, task.description, task.title, task.dueDate]);
 
 	// Load comments when task changes
 	useEffect(() => {
@@ -396,7 +407,17 @@ function TaskPanel({ task, column, onClose, onSubTaskAdd, onSubTaskToggle, onSub
 					<Icon name="close" size={14} /> Close
 				</button>
 			</div>
-			<h2 className="task-panel-title">{task.title}</h2>
+			{/* Editable title */}
+			<input
+				className="task-panel-title-input"
+				value={titleEdit}
+				onChange={(e) => setTitleEdit(e.target.value)}
+				onBlur={() => { if (titleEdit.trim() && titleEdit !== task.title) onTaskFieldUpdate?.(task._id, { title: titleEdit.trim() }); }}
+				style={{
+					width: "100%", background: "transparent", border: "none", borderBottom: "1px solid var(--border-subtle)",
+					color: "var(--text-primary)", fontSize: 18, fontWeight: 600, padding: "8px 0", marginBottom: 4, outline: "none",
+				}}
+			/>
 			<p className="task-panel-subtitle">
 				{column?.title || formatStatus(task.status)}
 			</p>
@@ -427,7 +448,16 @@ function TaskPanel({ task, column, onClose, onSubTaskAdd, onSubTaskToggle, onSub
 				</div>
 				<div>
 					<label>Due date</label>
-					<div className={`task-panel-chip ${due.tone}`}>{due.label}</div>
+					<input
+						type="date"
+						className="input"
+						value={dueDateEdit}
+						onChange={(e) => {
+							setDueDateEdit(e.target.value);
+							onTaskFieldUpdate?.(task._id, { dueDate: e.target.value || null });
+						}}
+						style={{ colorScheme: "dark" }}
+					/>
 				</div>
 				<div style={{ gridColumn: "1 / -1" }}>
 					<label>Labels</label>
@@ -439,7 +469,15 @@ function TaskPanel({ task, column, onClose, onSubTaskAdd, onSubTaskToggle, onSub
 
 			<div className="task-panel-section">
 				<h3>Description</h3>
-				<p>{task.description || "No description yet."}</p>
+				<textarea
+					className="input"
+					value={descEdit}
+					onChange={(e) => setDescEdit(e.target.value)}
+					onBlur={() => { if (descEdit !== task.description) onTaskFieldUpdate?.(task._id, { description: descEdit }); }}
+					placeholder="Add a description..."
+					rows={4}
+					style={{ resize: "vertical", fontFamily: "inherit", fontSize: 13 }}
+				/>
 			</div>
 
 			<div className="task-panel-section">
@@ -696,6 +734,12 @@ export default function BoardPage() {
 	const [columnError, setColumnError] = useState("");
 	const [showShortcuts, setShowShortcuts] = useState(false);
 
+	// Filters
+	const [filterAssignee, setFilterAssignee] = useState("");
+	const [filterPriority, setFilterPriority] = useState("");
+	const [filterDue, setFilterDue] = useState(""); // "overdue", "today", "week"
+	const hasFilters = Boolean(filterAssignee || filterPriority || filterDue);
+
 	// Global keyboard shortcuts
 	useEffect(() => {
 		const handler = (e) => {
@@ -933,6 +977,42 @@ export default function BoardPage() {
 
 	const columns = useMemo(() => [...(board?.columns || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), [board]);
 
+	// Derive all unique assignees from board tasks (for filter dropdown)
+	const boardMembers = useMemo(() => {
+		const map = new Map();
+		columns.forEach((col) =>
+			(col.tasks || []).forEach((task) =>
+				(task.assignees || []).forEach((a) => {
+					if (a?._id) map.set(a._id, a);
+				}),
+			),
+		);
+		return [...map.values()];
+	}, [columns]);
+
+	// Apply filters
+	const filteredColumns = useMemo(() => {
+		if (!filterAssignee && !filterPriority && !filterDue) return columns;
+		const now = new Date();
+		now.setHours(0, 0, 0, 0);
+		return columns.map((col) => ({
+			...col,
+			tasks: (col.tasks || []).filter((task) => {
+				if (filterAssignee && !task.assignees?.some((a) => a._id === filterAssignee)) return false;
+				if (filterPriority && task.priority !== filterPriority) return false;
+				if (filterDue) {
+					const due = task.dueDate ? new Date(task.dueDate) : null;
+					if (!due) return false;
+					const diff = Math.round((due - now) / (1000 * 60 * 60 * 24));
+					if (filterDue === "overdue" && diff >= 0) return false;
+					if (filterDue === "today" && diff !== 0) return false;
+					if (filterDue === "week" && (diff < 0 || diff > 7)) return false;
+				}
+				return true;
+			}),
+		}));
+	}, [columns, filterAssignee, filterPriority, filterDue]);
+
 	if (status === "loading") {
 		return (
 			<div
@@ -1066,48 +1146,48 @@ export default function BoardPage() {
 					<span>Filters:</span>
 					<select
 						className="input"
-						disabled
+						value={filterAssignee}
+						onChange={(e) => setFilterAssignee(e.target.value)}
+						style={{ minWidth: 120 }}
 					>
-						<option>Assignee</option>
+						<option value="">Assignee</option>
+						{boardMembers.map((m) => (
+							<option key={m._id} value={m._id}>{m.name}</option>
+						))}
 					</select>
 					<select
 						className="input"
-						disabled
+						value={filterPriority}
+						onChange={(e) => setFilterPriority(e.target.value)}
+						style={{ minWidth: 110 }}
 					>
-						<option>Label</option>
+						<option value="">Priority</option>
+						<option value="urgent">Urgent</option>
+						<option value="high">High</option>
+						<option value="medium">Medium</option>
+						<option value="low">Low</option>
 					</select>
 					<select
 						className="input"
-						disabled
+						value={filterDue}
+						onChange={(e) => setFilterDue(e.target.value)}
+						style={{ minWidth: 120 }}
 					>
-						<option>Due date</option>
-					</select>
-					<select
-						className="input"
-						disabled
-					>
-						<option>More</option>
+						<option value="">Due date</option>
+						<option value="overdue">Overdue</option>
+						<option value="today">Due today</option>
+						<option value="week">Due this week</option>
 					</select>
 					<span className="board-filter-divider" />
-					<select
-						className="input"
-						disabled
-					>
-						<option>Group by: None</option>
-					</select>
-					<select
-						className="input"
-						disabled
-					>
-						<option>Sort by: Manual</option>
-					</select>
-					<button
-						type="button"
-						className="btn btn-ghost btn-sm"
-						disabled
-					>
-						Clear filters
-					</button>
+					{hasFilters && (
+						<button
+							type="button"
+							className="btn btn-ghost btn-sm"
+							onClick={() => { setFilterAssignee(""); setFilterPriority(""); setFilterDue(""); }}
+						>
+							Clear filters
+						</button>
+					)}
 				</div>
 			</div>
 
@@ -1126,7 +1206,7 @@ export default function BoardPage() {
 										{...provided.droppableProps}
 										style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 8 }}
 									>
-										{columns.map((column, index) => {
+										{filteredColumns.map((column, index) => {
 											const tasks = [...(column.tasks || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 											const theme = getColumnTheme(column, index);
 											return (
@@ -1334,7 +1414,7 @@ export default function BoardPage() {
 					)}
 					{activeView === "list" && (
 						<div className="board-list">
-							{columns.map((column) => (
+							{filteredColumns.map((column) => (
 								<div
 									key={column._id}
 									className="board-list-group"

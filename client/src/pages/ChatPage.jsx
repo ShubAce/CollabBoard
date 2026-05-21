@@ -1,5 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useParams, useSearchParams, useOutletContext } from "react-router-dom";
+import data from "@emoji-mart/data";
+import Picker from "@emoji-mart/react";
 import api from "../api/axios";
 import Icon from "../components/ui/Icon.jsx";
 import { useToast } from "../hooks/useToast.jsx";
@@ -137,19 +140,26 @@ function EmojiPicker({ onPick, onClose }) {
 		const h = (e) => {
 			if (ref.current && !ref.current.contains(e.target)) onClose();
 		};
-		document.addEventListener("mousedown", h);
-		return () => document.removeEventListener("mousedown", h);
+		// slight delay so the button click doesn't immediately close it
+		const id = setTimeout(() => document.addEventListener("mousedown", h), 50);
+		return () => {
+			clearTimeout(id);
+			document.removeEventListener("mousedown", h);
+		};
 	}, [onClose]);
 
 	return (
-		<div ref={ref} className="emoji-picker-popup">
-			<div className="emoji-picker-row">
-				{QUICK_EMOJIS.map((em) => (
-					<button key={em} type="button" className="emoji-btn" onClick={() => onPick(em)}>
-						{em}
-					</button>
-				))}
-			</div>
+		<div ref={ref} className="emoji-picker-popup" style={{ zIndex: 300 }}>
+			<Picker
+				data={data}
+				onEmojiSelect={(emoji) => onPick(emoji.native)}
+				theme="dark"
+				set="native"
+				previewPosition="none"
+				skinTonePosition="none"
+				perLine={8}
+				maxFrequentRows={2}
+			/>
 		</div>
 	);
 }
@@ -157,14 +167,52 @@ function EmojiPicker({ onPick, onClose }) {
 /* ── Message row ──────────────────────────────────────────────── */
 function MessageRow({ msg, prevMsg, currentUser, onReact, onReply, onDelete, onEdit, threadCount }) {
 	const [emojiOpen, setEmojiOpen] = useState(false);
+	const [pickerCoords, setPickerCoords] = useState(null);
 	const [isEditing, setIsEditing] = useState(false);
 	const [editContent, setEditContent] = useState(msg.content);
+	
+	const bubbleRef = useRef(null);
+
 	const isOwn = msg.sender?._id === currentUser?._id;
 	const showHeader = !prevMsg || prevMsg.sender?._id !== msg.sender?._id || !isSameMinute(prevMsg.createdAt, msg.createdAt);
 	const isOnlyEmoji = /^\p{Emoji}+$/u.test((msg.content || "").trim()) && (msg.content || "").trim().length <= 4;
 
+	const toggleEmoji = () => {
+		if (emojiOpen) {
+			setEmojiOpen(false);
+			setPickerCoords(null);
+		} else {
+			if (!bubbleRef.current) return;
+			const rect = bubbleRef.current.getBoundingClientRect();
+			
+			// Safe constants for EmojiMart picker popup size
+			const pickerHeight = 430; 
+			const pickerWidth = 350; 
+			
+			const spaceAbove = rect.top;
+			const spaceBelow = window.innerHeight - rect.bottom;
+			
+			let top = rect.top + window.scrollY - pickerHeight - 8;
+			if (spaceAbove < pickerHeight && spaceBelow > spaceAbove) {
+				// Not enough space above, open below the bubble
+				top = rect.bottom + window.scrollY + 8;
+			}
+			
+			let left = rect.left + window.scrollX;
+			if (left + pickerWidth > window.innerWidth) {
+				left = window.innerWidth - pickerWidth - 16;
+			}
+			if (left < 16) {
+				left = 16;
+			}
+
+			setPickerCoords({ top, left });
+			setEmojiOpen(true);
+		}
+	};
+
 	return (
-		<div className={`chat-msg-group${showHeader ? " first-in-group" : ""}`}>
+		<div className={`chat-msg-group${showHeader ? " first-in-group" : ""}${emojiOpen ? " has-picker-open" : ""}${isOwn ? " own-message" : ""}`}>
 			<MsgAvatar sender={msg.sender} visible={showHeader} />
 
 			<div className="chat-msg-body">
@@ -190,10 +238,41 @@ function MessageRow({ msg, prevMsg, currentUser, onReact, onReply, onDelete, onE
 						</div>
 					</div>
 				) : (
-					<p className={`chat-msg-text${isOnlyEmoji ? " only-emoji" : ""}`}>
-						{renderContent(msg.content, currentUser)}
-						{msg.isEdited && <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 6 }}>(edited)</span>}
-					</p>
+					<div ref={bubbleRef} className="chat-msg-text-wrapper">
+						<p
+							className={`chat-msg-text${isOnlyEmoji ? " only-emoji" : ""}`}
+							onClick={toggleEmoji}
+						>
+							{renderContent(msg.content, currentUser)}
+							{msg.isEdited && <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 6 }}>(edited)</span>}
+						</p>
+
+						{/* Hover actions bar rendered INSIDE the bubble wrapper */}
+						<div className="chat-msg-actions">
+							<button type="button" className="chat-action-btn" title="Add reaction" onClick={toggleEmoji}>
+								😊
+							</button>
+							<button type="button" className="chat-action-btn" title="Reply in thread" onClick={() => onReply(msg)}>
+								<Icon name="chat" size={13} />
+							</button>
+							{isOwn && (
+								<>
+									<button type="button" className="chat-action-btn" title="Edit message" onClick={() => { setIsEditing(true); setEditContent(msg.content); }}>
+										<Icon name="pencil" size={13} />
+									</button>
+									<button
+										type="button"
+										className="chat-action-btn"
+										title="Delete message"
+										style={{ color: "var(--red)" }}
+										onClick={() => onDelete(msg._id)}
+									>
+										<Icon name="trash" size={13} />
+									</button>
+								</>
+							)}
+						</div>
+					</div>
 				)}
 
 				<Reactions
@@ -212,42 +291,30 @@ function MessageRow({ msg, prevMsg, currentUser, onReact, onReply, onDelete, onE
 				)}
 			</div>
 
-			{/* Hover action bar */}
-			<div className="chat-msg-actions">
-				<div style={{ position: "relative" }}>
-					<button type="button" className="chat-action-btn" title="Add reaction" onClick={() => setEmojiOpen((o) => !o)}>
-						😊
-					</button>
-					{emojiOpen && (
-						<EmojiPicker
-							onPick={(em) => {
-								onReact(msg._id, em);
-								setEmojiOpen(false);
-							}}
-							onClose={() => setEmojiOpen(false)}
-						/>
-					)}
-				</div>
-				<button type="button" className="chat-action-btn" title="Reply in thread" onClick={() => onReply(msg)}>
-					<Icon name="chat" size={13} />
-				</button>
-				{isOwn && (
-					<>
-						<button type="button" className="chat-action-btn" title="Edit message" onClick={() => { setIsEditing(true); setEditContent(msg.content); }}>
-							<Icon name="pencil" size={13} />
-						</button>
-						<button
-							type="button"
-							className="chat-action-btn"
-							title="Delete message"
-							style={{ color: "var(--red)" }}
-							onClick={() => onDelete(msg._id)}
-						>
-							<Icon name="trash" size={13} />
-						</button>
-					</>
-				)}
-			</div>
+			{/* Render EmojiPicker via Portal in document.body so it is NEVER clipped by scrollable parents */}
+			{emojiOpen && pickerCoords && createPortal(
+				<div 
+					style={{ 
+						position: "absolute", 
+						top: pickerCoords.top, 
+						left: pickerCoords.left, 
+						zIndex: 99999 
+					}}
+				>
+					<EmojiPicker
+						onPick={(em) => {
+							onReact(msg._id, em);
+							setEmojiOpen(false);
+							setPickerCoords(null);
+						}}
+						onClose={() => {
+							setEmojiOpen(false);
+							setPickerCoords(null);
+						}}
+					/>
+				</div>,
+				document.body
+			)}
 		</div>
 	);
 }
@@ -411,6 +478,19 @@ export default function ChatPage() {
 	const [loadingMore, setLoadingMore] = useState(false);
 	const [threadMsg, setThreadMsg] = useState(null);
 
+	const dmUser = useMemo(() => {
+		if (!workspace?.members || !currentUser) return null;
+		if (activeChannel?.name?.startsWith("dm_")) {
+			const parts = activeChannel.name.split("_");
+			const otherId = parts[1] === currentUser._id ? parts[2] : parts[1];
+			return workspace.members.find((m) => (m.user?._id || m.user) === otherId)?.user || workspace.members.find((m) => (m.user?._id || m.user) === otherId);
+		}
+		if (dmUserId) {
+			return workspace.members.find((m) => (m.user?._id || m.user) === dmUserId)?.user || workspace.members.find((m) => (m.user?._id || m.user) === dmUserId);
+		}
+		return null;
+	}, [activeChannel, dmUserId, workspace, currentUser]);
+
 	const messagesEndRef = useRef(null);
 	const typingTimers = useRef({});
 	const isFirstLoad = useRef(true);
@@ -560,19 +640,47 @@ export default function ChatPage() {
 		setMessages((prev) =>
 			prev.map((m) => {
 				if (m._id !== messageId) return m;
-				const reactions = [...(m.reactions || [])];
-				const idx = reactions.findIndex((r) => r.emoji === emoji);
+				let reactions = [...(m.reactions || [])];
 				const uid = currentUser?._id;
-				if (idx >= 0) {
-					const users = reactions[idx].users || [];
-					if (users.includes(uid)) {
-						reactions[idx] = { ...reactions[idx], users: users.filter((u) => u !== uid) };
-						if (!reactions[idx].users.length) reactions.splice(idx, 1);
-					} else {
-						reactions[idx] = { ...reactions[idx], users: [...users, uid] };
+				
+				let existingEmojiIndex = -1;
+				for (let i = 0; i < reactions.length; i++) {
+					if ((reactions[i].users || []).includes(uid)) {
+						existingEmojiIndex = i;
+						break;
+					}
+				}
+
+				if (existingEmojiIndex >= 0) {
+					const existingEmoji = reactions[existingEmojiIndex].emoji;
+					reactions[existingEmojiIndex] = {
+						...reactions[existingEmojiIndex],
+						users: (reactions[existingEmojiIndex].users || []).filter((u) => u !== uid)
+					};
+					if (!reactions[existingEmojiIndex].users.length) {
+						reactions.splice(existingEmojiIndex, 1);
+					}
+					if (existingEmoji !== emoji) {
+						const newIdx = reactions.findIndex((r) => r.emoji === emoji);
+						if (newIdx >= 0) {
+							reactions[newIdx] = {
+								...reactions[newIdx],
+								users: [...(reactions[newIdx].users || []), uid]
+							};
+						} else {
+							reactions.push({ emoji, users: [uid] });
+						}
 					}
 				} else {
-					reactions.push({ emoji, users: [uid] });
+					const newIdx = reactions.findIndex((r) => r.emoji === emoji);
+					if (newIdx >= 0) {
+						reactions[newIdx] = {
+							...reactions[newIdx],
+							users: [...(reactions[newIdx].users || []), uid]
+						};
+					} else {
+						reactions.push({ emoji, users: [uid] });
+					}
 				}
 				return { ...m, reactions };
 			}),
@@ -636,10 +744,12 @@ export default function ChatPage() {
 				{/* Header */}
 				<div className="chat-header">
 					<div className="chat-header-left">
-						<span style={{ fontSize: 18, color: "var(--text-muted)" }}>{activeChannel?.isPrivate ? "🔒" : "#"}</span>
+						<span style={{ fontSize: 18, color: "var(--text-muted)", display: "flex", alignItems: "center" }}>
+							{dmUser ? <Icon name="user" size={18} /> : activeChannel?.isPrivate ? <Icon name="lock" size={16} /> : "#"}
+						</span>
 						<div>
-							<div className="chat-header-name">{activeChannel?.name || "..."}</div>
-							<div className="chat-header-desc">{activeChannel?.description || "All workspace members"}</div>
+							<div className="chat-header-name">{dmUser ? dmUser.name : (activeChannel?.name || "...")}</div>
+							<div className="chat-header-desc">{dmUser ? "Direct Message" : (activeChannel?.description || "All workspace members")}</div>
 						</div>
 					</div>
 					<div className="chat-header-right">

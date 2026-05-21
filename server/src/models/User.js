@@ -10,6 +10,12 @@ const userSchema = new mongoose.Schema(
 		googleId: { type: String, default: null },
 		isVerified: { type: Boolean, default: false },
 		refreshTokenHash: { type: String, default: null },
+		status: {
+			id: { type: String, default: "available" },
+			label: { type: String, default: "Available" },
+			icon: { type: String, default: "check" },
+			color: { type: String, default: "var(--green)" }
+		},
 	},
 	{ timestamps: true },
 );

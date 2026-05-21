@@ -177,28 +177,30 @@ function MessageRow({ msg, prevMsg, currentUser, onReact, onReply, onDelete, onE
 	const showHeader = !prevMsg || prevMsg.sender?._id !== msg.sender?._id || !isSameMinute(prevMsg.createdAt, msg.createdAt);
 	const isOnlyEmoji = /^\p{Emoji}+$/u.test((msg.content || "").trim()) && (msg.content || "").trim().length <= 4;
 
-	const toggleEmoji = () => {
+	const toggleEmoji = (e) => {
 		if (emojiOpen) {
 			setEmojiOpen(false);
 			setPickerCoords(null);
 		} else {
-			if (!bubbleRef.current) return;
-			const rect = bubbleRef.current.getBoundingClientRect();
+			// Align emoji picker exactly to X and Y mouse coordinates of the click!
+			const mouseX = e.clientX;
+			const mouseY = e.clientY;
 			
-			// Safe constants for EmojiMart picker popup size
-			const pickerHeight = 430; 
-			const pickerWidth = 350; 
+			const pickerHeight = 435; 
+			const pickerWidth = 358; 
 			
-			const spaceAbove = rect.top;
-			const spaceBelow = window.innerHeight - rect.bottom;
+			const spaceAbove = mouseY;
+			const spaceBelow = window.innerHeight - mouseY;
 			
-			let top = rect.top + window.scrollY - pickerHeight - 8;
+			// Decide vertical placement (up vs down) relative to viewport
+			let top = mouseY - pickerHeight - 8;
 			if (spaceAbove < pickerHeight && spaceBelow > spaceAbove) {
-				// Not enough space above, open below the bubble
-				top = rect.bottom + window.scrollY + 8;
+				// Not enough space above, open downwards
+				top = mouseY + 8;
 			}
 			
-			let left = rect.left + window.scrollX;
+			// Centered horizontally around mouse click coordinate
+			let left = mouseX - (pickerWidth / 2);
 			if (left + pickerWidth > window.innerWidth) {
 				left = window.innerWidth - pickerWidth - 16;
 			}

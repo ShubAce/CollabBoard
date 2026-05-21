@@ -168,6 +168,7 @@ function EmojiPicker({ onPick, onClose }) {
 function MessageRow({ msg, prevMsg, currentUser, onReact, onReply, onDelete, onEdit, threadCount }) {
 	const [emojiOpen, setEmojiOpen] = useState(false);
 	const [pickerCoords, setPickerCoords] = useState(null);
+	const [menuCoords, setMenuCoords] = useState(null);
 	const [isEditing, setIsEditing] = useState(false);
 	const [editContent, setEditContent] = useState(msg.content);
 	
@@ -177,11 +178,30 @@ function MessageRow({ msg, prevMsg, currentUser, onReact, onReply, onDelete, onE
 	const showHeader = !prevMsg || prevMsg.sender?._id !== msg.sender?._id || !isSameMinute(prevMsg.createdAt, msg.createdAt);
 	const isOnlyEmoji = /^\p{Emoji}+$/u.test((msg.content || "").trim()) && (msg.content || "").trim().length <= 4;
 
+	const handleMessageClick = (e) => {
+		e.preventDefault();
+		e.stopPropagation();
+		
+		let x = e.clientX;
+		let y = e.clientY;
+		if (x + 150 > window.innerWidth) x = window.innerWidth - 150;
+		if (y + 50 > window.innerHeight) y = window.innerHeight - 50;
+		
+		setMenuCoords({ x, y });
+		if (emojiOpen) {
+			setEmojiOpen(false);
+			setPickerCoords(null);
+		}
+	};
+
 	const toggleEmoji = (e) => {
+		e.stopPropagation();
 		if (emojiOpen) {
 			setEmojiOpen(false);
 			setPickerCoords(null);
 		} else {
+			// Close menu if open
+			setMenuCoords(null);
 			// Align emoji picker exactly to X and Y mouse coordinates of the click!
 			const mouseX = e.clientX;
 			const mouseY = e.clientY;
@@ -198,14 +218,17 @@ function MessageRow({ msg, prevMsg, currentUser, onReact, onReply, onDelete, onE
 				// Not enough space above, open downwards
 				top = mouseY + 8;
 			}
+			// Strict bounds to guarantee it's always fully visible on the screen vertically
+			if (top < 8) top = 8;
+			if (top + pickerHeight > window.innerHeight - 8) top = window.innerHeight - pickerHeight - 8;
 			
 			// Centered horizontally around mouse click coordinate
 			let left = mouseX - (pickerWidth / 2);
-			if (left + pickerWidth > window.innerWidth) {
-				left = window.innerWidth - pickerWidth - 16;
+			if (left + pickerWidth > window.innerWidth - 8) {
+				left = window.innerWidth - pickerWidth - 8;
 			}
-			if (left < 16) {
-				left = 16;
+			if (left < 8) {
+				left = 8;
 			}
 
 			setPickerCoords({ top, left });
@@ -243,38 +266,13 @@ function MessageRow({ msg, prevMsg, currentUser, onReact, onReply, onDelete, onE
 					<div ref={bubbleRef} className="chat-msg-text-wrapper">
 						<p
 							className={`chat-msg-text${isOnlyEmoji ? " only-emoji" : ""}`}
-							onClick={toggleEmoji}
+							onClick={handleMessageClick}
 						>
 							{renderContent(msg.content, currentUser)}
 							{msg.isEdited && <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 6 }}>(edited)</span>}
 						</p>
-
-						{/* Hover actions bar rendered INSIDE the bubble wrapper */}
-						<div className="chat-msg-actions">
-							<button type="button" className="chat-action-btn" title="Add reaction" onClick={toggleEmoji}>
-								😊
-							</button>
-							<button type="button" className="chat-action-btn" title="Reply in thread" onClick={() => onReply(msg)}>
-								<Icon name="chat" size={13} />
-							</button>
-							{isOwn && (
-								<>
-									<button type="button" className="chat-action-btn" title="Edit message" onClick={() => { setIsEditing(true); setEditContent(msg.content); }}>
-										<Icon name="pencil" size={13} />
-									</button>
-									<button
-										type="button"
-										className="chat-action-btn"
-										title="Delete message"
-										style={{ color: "var(--red)" }}
-										onClick={() => onDelete(msg._id)}
-									>
-										<Icon name="trash" size={13} />
-									</button>
-								</>
-							)}
-						</div>
 					</div>
+
 				)}
 
 				<Reactions
@@ -292,6 +290,55 @@ function MessageRow({ msg, prevMsg, currentUser, onReact, onReply, onDelete, onE
 					</button>
 				)}
 			</div>
+
+			{/* Menu Backdrop */}
+			{menuCoords && createPortal(
+				<div 
+					style={{ position: "fixed", inset: 0, zIndex: 99998 }} 
+					onClick={(e) => { e.stopPropagation(); setMenuCoords(null); }} 
+					onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setMenuCoords(null); }}
+				/>,
+				document.body
+			)}
+
+			{/* 4-Options Menu Portal */}
+			{menuCoords && createPortal(
+				<div 
+					className="chat-msg-actions-popup"
+					style={{ 
+						position: "fixed", 
+						top: menuCoords.y, 
+						left: menuCoords.x, 
+						zIndex: 99999,
+						background: "var(--bg-surface-1)",
+						border: "1px solid var(--border-default)",
+						borderRadius: "8px",
+						boxShadow: "0 10px 40px rgba(0,0,0,0.6)",
+						display: "flex",
+						padding: "4px",
+						gap: "4px"
+					}}
+					onClick={(e) => e.stopPropagation()}
+				>
+					<button type="button" className="chat-action-btn" title="Add reaction" onClick={(e) => toggleEmoji(e)}>
+						😊
+					</button>
+					<button type="button" className="chat-action-btn" title="Reply in thread" onClick={() => { onReply(msg); setMenuCoords(null); }}>
+						<Icon name="chat" size={13} />
+					</button>
+					{isOwn && (
+						<>
+							<button type="button" className="chat-action-btn" title="Edit message" onClick={() => { setIsEditing(true); setEditContent(msg.content); setMenuCoords(null); }}>
+								<Icon name="pencil" size={13} />
+							</button>
+							<button type="button" className="chat-action-btn" title="Delete message" style={{ color: "var(--red)" }} onClick={() => { onDelete(msg._id); setMenuCoords(null); }}>
+								<Icon name="trash" size={13} />
+							</button>
+						</>
+					)}
+				</div>,
+				document.body
+			)}
 
 			{/* Render EmojiPicker via Portal in document.body so it is NEVER clipped by scrollable parents */}
 			{emojiOpen && pickerCoords && createPortal(

@@ -978,7 +978,8 @@
 	box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
 }
 .task-card.dragging {
-	transform: rotate(2deg) scale(1.02);
+	animation: none !important;
+	transition: none !important;
 	box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
 	opacity: 0.9;
 	cursor: grabbing;

@@ -200,36 +200,33 @@ function MessageRow({ msg, prevMsg, currentUser, onReact, onReply, onDelete, onE
 			setEmojiOpen(false);
 			setPickerCoords(null);
 		} else {
+			// Get button's exact position before unmounting menu
+			const rect = e.currentTarget.getBoundingClientRect();
+			
 			// Close menu if open
 			setMenuCoords(null);
-			// Align emoji picker exactly to X and Y mouse coordinates of the click!
-			const mouseX = e.clientX;
-			const mouseY = e.clientY;
 			
 			const pickerHeight = 435; 
 			const pickerWidth = 358; 
 			
-			const spaceAbove = mouseY;
-			const spaceBelow = window.innerHeight - mouseY;
+			// Default to opening directly to the RIGHT of the button
+			let left = rect.right + 8;
+			let top = rect.top;
 			
-			// Decide vertical placement (up vs down) relative to viewport
-			let top = mouseY - pickerHeight - 8;
-			if (spaceAbove < pickerHeight && spaceBelow > spaceAbove) {
-				// Not enough space above, open downwards
-				top = mouseY + 8;
-			}
-			// Strict bounds to guarantee it's always fully visible on the screen vertically
-			if (top < 8) top = 8;
-			if (top + pickerHeight > window.innerHeight - 8) top = window.innerHeight - pickerHeight - 8;
-			
-			// Centered horizontally around mouse click coordinate
-			let left = mouseX - (pickerWidth / 2);
+			// Horizontal boundary: If it overflows the right side of the screen
 			if (left + pickerWidth > window.innerWidth - 8) {
-				left = window.innerWidth - pickerWidth - 8;
+				// Flip it to the LEFT of the button
+				left = rect.left - pickerWidth - 8;
+				
+				// Absolute screen edge fallback
+				if (left < 8) left = 8;
 			}
-			if (left < 8) {
-				left = 8;
+			
+			// Vertical boundary: Ensure it fully fits on the screen
+			if (top + pickerHeight > window.innerHeight - 8) {
+				top = window.innerHeight - pickerHeight - 8;
 			}
+			if (top < 8) top = 8;
 
 			setPickerCoords({ top, left });
 			setEmojiOpen(true);

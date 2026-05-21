@@ -1,6 +1,6 @@
 /* eslint-disable react-hooks/refs */
 import { DragDropContext, Draggable, Droppable } from "@hello-pangea/dnd";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { Link, useParams } from "react-router-dom";
 import api from "../api/axios";
 import Icon from "../components/ui/Icon.jsx";
@@ -274,7 +274,7 @@ function ListRow({ task, column, onOpen }) {
 	);
 }
 
-function TaskPanel({ task, column, onClose, onSubTaskAdd, onSubTaskToggle, onSubTaskDelete, onDependencyAdd, onDependencyRemove, onTaskFieldUpdate, relationOptions, workspaceId, boardId }) {
+function TaskPanel({ task, column, onClose, onSubTaskAdd, onSubTaskToggle, onSubTaskDelete, onDependencyAdd, onDependencyRemove, onTaskFieldUpdate, onAssigneeAdd, onAssigneeRemove, onAttachmentAdd, onAttachmentRemove, relationOptions, workspaceMembers, workspaceId, boardId }) {
 	const [activeTab, setActiveTab] = useState("comments");
 	const [subTaskTitle, setSubTaskTitle] = useState("");
 	const [subTaskBusy, setSubTaskBusy] = useState(false);
@@ -288,6 +288,9 @@ function TaskPanel({ task, column, onClose, onSubTaskAdd, onSubTaskToggle, onSub
 	const [descEdit, setDescEdit] = useState(task.description || "");
 	const [titleEdit, setTitleEdit] = useState(task.title || "");
 	const [dueDateEdit, setDueDateEdit] = useState(task.dueDate ? task.dueDate.slice(0, 10) : "");
+	const [newLabel, setNewLabel] = useState("");
+	const [uploading, setUploading] = useState(false);
+	const fileInputRef = useRef(null);
 	const due = getDueMeta(task.dueDate);
 	const labels = task.labels || [];
 	const attachments = task.attachments || [];
@@ -342,6 +345,18 @@ function TaskPanel({ task, column, onClose, onSubTaskAdd, onSubTaskToggle, onSub
 			setSubTaskTitle("");
 		} finally {
 			setSubTaskBusy(false);
+		}
+	};
+
+	const handleFileSelect = async (e) => {
+		const file = e.target.files?.[0];
+		if (!file) return;
+		setUploading(true);
+		try {
+			await onAttachmentAdd?.(task._id, file);
+		} finally {
+			setUploading(false);
+			if (fileInputRef.current) fileInputRef.current.value = "";
 		}
 	};
 
@@ -442,8 +457,28 @@ function TaskPanel({ task, column, onClose, onSubTaskAdd, onSubTaskToggle, onSub
 				</div>
 				<div>
 					<label>Assignees</label>
-					<div className="task-panel-chip">
-						<AssigneeStack assignees={task.assignees || []} max={4} />
+					<div className="task-panel-chip" style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
+						{(task.assignees || []).map((a) => (
+							<span key={a._id} className="task-pill" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+								{a.name}
+								<button type="button" style={{ background: "transparent", border: "none", cursor: "pointer", display: "flex" }} onClick={() => onAssigneeRemove?.(task._id, a._id)}>
+									<Icon name="close" size={12} />
+								</button>
+							</span>
+						))}
+						<select 
+							className="input" 
+							style={{ width: "auto", padding: "2px 8px", fontSize: 12 }} 
+							value="" 
+							onChange={(e) => {
+								if (e.target.value) onAssigneeAdd?.(task._id, e.target.value);
+							}}
+						>
+							<option value="">+ Assign</option>
+							{(workspaceMembers || []).filter(m => !(task.assignees || []).some(a => a._id === m.user?._id)).map(m => (
+								<option key={m.user?._id} value={m.user?._id}>{m.user?.name}</option>
+							))}
+						</select>
 					</div>
 				</div>
 				<div>
@@ -461,8 +496,31 @@ function TaskPanel({ task, column, onClose, onSubTaskAdd, onSubTaskToggle, onSub
 				</div>
 				<div style={{ gridColumn: "1 / -1" }}>
 					<label>Labels</label>
-					<div className="task-panel-chip">
-						{labels.length ? labels.map((l) => <span key={l} className="task-pill">{l}</span>) : <span className="task-meta-muted">No labels</span>}
+					<div className="task-panel-chip" style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
+						{labels.length ? labels.map((l) => (
+							<span key={l} className="task-pill" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+								{l}
+								<button type="button" style={{ background: "transparent", border: "none", cursor: "pointer", display: "flex" }} onClick={() => onTaskFieldUpdate?.(task._id, { labels: labels.filter(label => label !== l) })}>
+									<Icon name="close" size={12} />
+								</button>
+							</span>
+						)) : <span className="task-meta-muted">No labels</span>}
+						<input 
+							type="text" 
+							className="input" 
+							placeholder="+ Add label" 
+							value={newLabel}
+							onChange={(e) => setNewLabel(e.target.value)}
+							style={{ width: "100px", padding: "2px 8px", fontSize: 12 }}
+							onKeyDown={(e) => {
+								if (e.key === "Enter" && newLabel.trim()) {
+									if (!labels.includes(newLabel.trim())) {
+										onTaskFieldUpdate?.(task._id, { labels: [...labels, newLabel.trim()] });
+									}
+									setNewLabel("");
+								}
+							}}
+						/>
 					</div>
 				</div>
 			</div>
@@ -516,7 +574,6 @@ function TaskPanel({ task, column, onClose, onSubTaskAdd, onSubTaskToggle, onSub
 					<div className="task-relations-form">
 						<select value={relationForm.type} onChange={(e) => setRelationForm((p) => ({ ...p, type: e.target.value }))} className="input">
 							<option value="blockedBy">Blocked by</option>
-							<option value="blocking">Blocking</option>
 						</select>
 						<select value={relationForm.taskId} onChange={(e) => setRelationForm((p) => ({ ...p, taskId: e.target.value }))} className="input">
 							<option value="">Select task...</option>
@@ -564,21 +621,22 @@ function TaskPanel({ task, column, onClose, onSubTaskAdd, onSubTaskToggle, onSub
 				{attachments.length > 0 && (
 					<div className="task-panel-list">
 						{attachments.map((item) => (
-							<div key={item.url || item.name} className="task-panel-list-item" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+							<div key={item._id || item.url || item.name} className="task-panel-list-item" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
 								<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
 									<Icon name="paperclip" size={14} />
 									<span style={{ fontSize: 13 }}>{item.name}</span>
 								</div>
 								<div style={{ display: "flex", gap: 4 }}>
-									<button type="button" className="btn btn-ghost btn-sm" style={{ padding: "4px 8px" }} title="Download"><Icon name="download" size={14} /></button>
-									<button type="button" className="btn btn-ghost btn-sm" style={{ padding: "4px 8px", color: "var(--danger)" }} title="Remove"><Icon name="trash" size={14} /></button>
+									<a href={item.url} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-sm" style={{ padding: "4px 8px" }} title="Download"><Icon name="download" size={14} /></a>
+									<button type="button" className="btn btn-ghost btn-sm" style={{ padding: "4px 8px", color: "var(--danger)" }} title="Remove" onClick={() => onAttachmentRemove?.(task._id, item._id)}><Icon name="trash" size={14} /></button>
 								</div>
 							</div>
 						))}
 					</div>
 				)}
-				<button type="button" className="btn btn-ghost btn-sm" style={{ marginTop: attachments.length ? 8 : 0, width: "100%", borderStyle: "dashed", justifyContent: "center" }}>
-					<Icon name="upload" size={14} /> Attach file (drag or click)
+				<input type="file" ref={fileInputRef} style={{ display: "none" }} onChange={handleFileSelect} />
+				<button type="button" className="btn btn-ghost btn-sm" disabled={uploading} onClick={() => fileInputRef.current?.click()} style={{ marginTop: attachments.length ? 8 : 0, width: "100%", borderStyle: "dashed", justifyContent: "center" }}>
+					{uploading ? "Uploading..." : <><Icon name="upload" size={14} /> Attach file (drag or click)</>}
 				</button>
 			</div>
 
@@ -974,6 +1032,44 @@ export default function BoardPage() {
 			/* ignore */
 		}
 	};
+
+	const handleAssigneeAdd = async (taskId, userId) => {
+		try {
+			const { data } = await api.post(`/workspaces/${workspaceId}/boards/${boardId}/tasks/${taskId}/assignees`, { userId });
+			setBoard((prev) => updateTaskInBoard(prev, taskId, { assignees: data.assignees }));
+		} catch { /* ignore */ }
+	};
+
+	const handleAssigneeRemove = async (taskId, userId) => {
+		try {
+			const { data } = await api.delete(`/workspaces/${workspaceId}/boards/${boardId}/tasks/${taskId}/assignees/${userId}`);
+			setBoard((prev) => updateTaskInBoard(prev, taskId, { assignees: data.assignees }));
+		} catch { /* ignore */ }
+	};
+
+	const handleAttachmentAdd = async (taskId, file) => {
+		try {
+			const formData = new FormData();
+			formData.append("file", file);
+			const { data } = await api.post(`/workspaces/${workspaceId}/boards/${boardId}/tasks/${taskId}/attachments`, formData, {
+				headers: { "Content-Type": "multipart/form-data" }
+			});
+			setBoard((prev) => updateTaskInBoard(prev, taskId, { attachments: data.attachments }));
+		} catch { /* ignore */ }
+	};
+
+	const handleAttachmentRemove = async (taskId, attachmentId) => {
+		try {
+			const { data } = await api.delete(`/workspaces/${workspaceId}/boards/${boardId}/tasks/${taskId}/attachments/${attachmentId}`);
+			setBoard((prev) => updateTaskInBoard(prev, taskId, { attachments: data.attachments }));
+		} catch { /* ignore */ }
+	};
+
+	const [workspaceMembers, setWorkspaceMembers] = useState([]);
+	useEffect(() => {
+		if (!workspaceId) return;
+		api.get(`/workspaces/${workspaceId}`).then(({ data }) => setWorkspaceMembers(data.members || []));
+	}, [workspaceId]);
 
 	const columns = useMemo(() => [...(board?.columns || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), [board]);
 
@@ -1506,7 +1602,12 @@ export default function BoardPage() {
 						onDependencyAdd={handleDependencyAdd}
 						onDependencyRemove={handleDependencyRemove}
 						onTaskFieldUpdate={handleTaskFieldUpdate}
+						onAssigneeAdd={handleAssigneeAdd}
+						onAssigneeRemove={handleAssigneeRemove}
+						onAttachmentAdd={handleAttachmentAdd}
+						onAttachmentRemove={handleAttachmentRemove}
 						relationOptions={relationOptions}
+						workspaceMembers={workspaceMembers}
 						workspaceId={workspaceId}
 						boardId={boardId}
 					/>

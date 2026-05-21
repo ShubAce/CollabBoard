@@ -19,7 +19,7 @@ const reindexTasks = (tasks) => tasks.map((task, index) => ({ ...task, order: in
 export const addTaskToColumn = (board, task) => {
 	if (!board) return board;
 	const nextBoard = cloneBoard(board);
-	const column = nextBoard.columns.find((entry) => toId(entry._id) === toId(task.columnId));
+	const column = nextBoard.columns.find((entry) => toId(entry._id) === toId(task.columnId || task.column));
 	if (!column) return board;
 	if ((column.tasks || []).some((entry) => toId(entry._id) === toId(task._id))) return board;
 

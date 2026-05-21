@@ -1,4 +1,5 @@
 import { z } from "zod";
+import cloudinary from "../config/cloudinary.js";
 import Board from "../models/Board.js";
 import Comment from "../models/Comment.js";
 import Notification from "../models/Notification.js";
@@ -400,12 +401,17 @@ export const addAssignee = async (req, res, next) => {
 			return res.status(404).json({ message: "Task not found" });
 		}
 
-		const user = await User.findById(req.params.userId).select("_id");
+		const userId = req.body.userId;
+		if (!userId) {
+			return res.status(400).json({ message: "userId is required in request body" });
+		}
+
+		const user = await User.findById(userId).select("_id");
 		if (!user) {
 			return res.status(404).json({ message: "User not found" });
 		}
 
-		const exists = task.assignees.some((id) => id.toString() === req.params.userId);
+		const exists = task.assignees.some((id) => id.toString() === userId);
 		if (!exists) {
 			task.assignees.push(user._id);
 			await task.save();
@@ -632,6 +638,9 @@ export const addDependency = async (req, res, next) => {
 		addUniqueId(task.dependencies[primaryField], relatedTask._id);
 		addUniqueId(relatedTask.dependencies[relatedField], task._id);
 
+		task.markModified('dependencies');
+		relatedTask.markModified('dependencies');
+
 		await Promise.all([task.save(), relatedTask.save()]);
 		await invalidateBoardCache(task.board);
 		if (task.board.toString() !== relatedTask.board.toString()) {
@@ -684,6 +693,9 @@ export const removeDependency = async (req, res, next) => {
 		task.dependencies[primaryField] = removeId(task.dependencies[primaryField], relatedTask._id);
 		relatedTask.dependencies[relatedField] = removeId(relatedTask.dependencies[relatedField], task._id);
 
+		task.markModified('dependencies');
+		relatedTask.markModified('dependencies');
+
 		await Promise.all([task.save(), relatedTask.save()]);
 		await invalidateBoardCache(task.board);
 		if (task.board.toString() !== relatedTask.board.toString()) {
@@ -728,6 +740,63 @@ export const deleteComment = async (req, res, next) => {
 		await task.save();
 
 		return res.status(200).json({ message: "Comment deleted" });
+	} catch (err) {
+		return next(err);
+	}
+};
+
+export const addAttachment = async (req, res, next) => {
+	try {
+		const task = await ensureTask(req.params.workspaceId, req.params.boardId, req.params.taskId);
+		if (!task) return res.status(404).json({ message: "Task not found" });
+
+		if (!req.file) {
+			return res.status(400).json({ message: "No file uploaded" });
+		}
+
+		// Upload to cloudinary
+		const uploadResult = await new Promise((resolve, reject) => {
+			const stream = cloudinary.uploader.upload_stream(
+				{ resource_type: "auto", folder: `collabboard/tasks/${task._id}` },
+				(error, result) => {
+					if (error) reject(error);
+					else resolve(result);
+				}
+			);
+			stream.end(req.file.buffer);
+		});
+
+		task.attachments.push({
+			name: req.file.originalname,
+			url: uploadResult.secure_url,
+		});
+
+		await task.save();
+		await invalidateBoardCache(task.board);
+		emitTaskUpdate(req, task._id, task.board, { attachments: task.attachments });
+
+		return res.status(200).json({ attachments: task.attachments });
+	} catch (err) {
+		return next(err);
+	}
+};
+
+export const removeAttachment = async (req, res, next) => {
+	try {
+		const task = await ensureTask(req.params.workspaceId, req.params.boardId, req.params.taskId);
+		if (!task) return res.status(404).json({ message: "Task not found" });
+
+		const attachmentId = req.params.attachmentId;
+		const attachment = task.attachments.id(attachmentId);
+		if (!attachment) return res.status(404).json({ message: "Attachment not found" });
+
+		attachment.deleteOne();
+		await task.save();
+
+		await invalidateBoardCache(task.board);
+		emitTaskUpdate(req, task._id, task.board, { attachments: task.attachments });
+
+		return res.status(200).json({ attachments: task.attachments });
 	} catch (err) {
 		return next(err);
 	}

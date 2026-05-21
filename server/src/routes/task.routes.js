@@ -17,6 +17,9 @@ import {
 	updateSubTask,
 } from "../controllers/task.controller.js";
 import { checkRole } from "../middleware/checkRole.js";
+import multer from "multer";
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 const router = Router({ mergeParams: true });
 
@@ -35,5 +38,10 @@ router.post("/:taskId/dependencies/remove", checkRole("editor"), removeDependenc
 router.post("/:taskId/comments", addComment);
 router.get("/:taskId/comments", listComments);
 router.delete("/:taskId/comments/:commentId", deleteComment);
+
+// Additional routes for Attachments
+import { addAttachment, removeAttachment } from "../controllers/task.controller.js";
+router.post("/:taskId/attachments", checkRole("editor"), upload.single("file"), addAttachment);
+router.delete("/:taskId/attachments/:attachmentId", checkRole("editor"), removeAttachment);
 
 export default router;

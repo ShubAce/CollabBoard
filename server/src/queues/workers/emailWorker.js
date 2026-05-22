@@ -35,6 +35,35 @@ async function sendMailWithResend(mailOptions, maxAttempts = 3) {
 
     const toArray = Array.isArray(to) ? to : [to];
 
+    // Self-healing from-field parsing and sanitization
+    let cleanFrom = from || process.env.EMAIL_FROM || "onboarding@resend.dev";
+    cleanFrom = cleanFrom.replace(/^['"]|['"]$/g, "").trim();
+
+    const emailRegex = /^(?:["']?([^"']+)["']?\s+)?<([^>]+)>$/;
+    const match = cleanFrom.match(emailRegex);
+
+    if (match) {
+        let displayName = match[1] ? match[1].trim() : "";
+        let emailAddress = match[2] ? match[2].trim() : "";
+
+        // If it's an unverified domain type (e.g. Gmail), rewrite the domain portion to onboarding@resend.dev
+        if (emailAddress.includes("@gmail.com") || emailAddress.includes("your_email") || emailAddress.includes("example.com")) {
+            emailAddress = "onboarding@resend.dev";
+        }
+
+        if (displayName) {
+            cleanFrom = `${displayName} <${emailAddress}>`;
+        } else {
+            cleanFrom = emailAddress;
+        }
+    } else {
+        let emailAddress = cleanFrom;
+        if (emailAddress.includes("@gmail.com") || emailAddress.includes("your_email") || emailAddress.includes("example.com")) {
+            emailAddress = "onboarding@resend.dev";
+        }
+        cleanFrom = emailAddress;
+    }
+
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
             const response = await fetch("https://api.resend.com/emails", {
@@ -44,7 +73,7 @@ async function sendMailWithResend(mailOptions, maxAttempts = 3) {
                     "Authorization": `Bearer ${process.env.RESEND_API_KEY}`
                 },
                 body: JSON.stringify({
-                    from: from || process.env.EMAIL_FROM || "onboarding@resend.dev",
+                    from: cleanFrom,
                     to: toArray,
                     subject,
                     html,

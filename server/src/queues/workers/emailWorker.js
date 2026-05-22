@@ -11,8 +11,15 @@ await mongoose.connect(process.env.MONGO_URI);
 const transporter = nodemailer.createTransport({
 	host: process.env.SMTP_HOST,
 	port: process.env.SMTP_PORT,
+	secure: process.env.SMTP_PORT === "465" || process.env.SMTP_PORT == 465,
 	auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-});const BRAND = {
+});
+
+transporter.verify()
+	.then(() => console.log("SMTP connection verified successfully!"))
+	.catch((err) => console.error("SMTP verification failed. Emails will not send:", err.message));
+
+const BRAND = {
 	name: "CollabBoard",
 	accent: "#6366F1",
 	bg: "#F5F7FB",

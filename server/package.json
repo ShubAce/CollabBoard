@@ -4,7 +4,7 @@
 	"type": "module",
 	"main": "server.js",
 	"scripts": {
-		"dev": "nodemon server.js",
+		"dev": "concurrently -n \"server,email,activity\" -c \"cyan,magenta,yellow\" \"nodemon server.js\" \"nodemon src/queues/workers/emailWorker.js\" \"nodemon src/queues/workers/activityWorker.js\"",
 		"start": "node server.js",
 		"worker:email": "node src/queues/workers/emailWorker.js",
 		"worker:activity": "node src/queues/workers/activityWorker.js"
@@ -41,6 +41,7 @@
 		"zod": "^4.4.3"
 	},
 	"devDependencies": {
+		"concurrently": "^9.2.1",
 		"nodemon": "^3.1.14"
 	}
 }

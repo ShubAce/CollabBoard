@@ -11,11 +11,8 @@ try {
     console.warn("Could not set DNS servers:", err.message);
 }
 
-import dnsPromises from "node:dns/promises";
-import net from "node:net";
 import mongoose from "mongoose";
 import cron from "node-cron";
-import nodemailer from "nodemailer";
 import emailQueue from "../emailQueue.js";
 import Task from "../../models/Task.js";
 
@@ -28,136 +25,48 @@ function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function testTcpConnection(host, port, timeout = 4000) {
-    return new Promise((resolve) => {
-        const socket = new net.Socket();
-        socket.setTimeout(timeout);
-        socket.connect(port, host, () => { socket.destroy(); resolve(true); });
-        const onError = () => { socket.destroy(); resolve(false); };
-        socket.on("error", onError);
-        socket.on("timeout", onError);
-    });
-}
+// ── Resend API Integrations ───────────────────────────────────────────────────
+async function sendMailWithResend(mailOptions, maxAttempts = 3) {
+    const { from, to, subject, html, text } = mailOptions;
 
-// ── SMTP Resolution ───────────────────────────────────────────────────────────
-// Resolves the best reachable SMTP IP+port combo.
-// Returns { host, port, secure, tlsOptions } or throws if nothing reachable.
-async function resolveSmtp() {
-    const originalHost = process.env.SMTP_HOST;
-    const configuredPort = parseInt(process.env.SMTP_PORT || "587");
-
-    let addresses;
-    try {
-        addresses = await dnsPromises.resolve4(originalHost);
-        console.log(`Resolved ${originalHost} →`, addresses);
-    } catch (err) {
-        console.warn(`DNS resolution failed for ${originalHost}, falling back to hostname directly:`, err.message);
-        // Use hostname as-is and let nodemailer resolve it
-        return {
-            host: originalHost,
-            port: configuredPort,
-            secure: configuredPort === 465,
-            tlsOptions: { servername: originalHost },
-        };
+    if (!process.env.RESEND_API_KEY) {
+        throw new Error("RESEND_API_KEY environment variable is not defined.");
     }
 
-    // Port candidates: try configured port first, then the other common port
-    const portCandidates = configuredPort === 465
-        ? [{ port: 465, secure: true }, { port: 587, secure: false }]
-        : [{ port: configuredPort, secure: configuredPort === 465 }, { port: 465, secure: true }];
+    const toArray = Array.isArray(to) ? to : [to];
 
-    for (const { port, secure } of portCandidates) {
-        for (const ip of addresses) {
-            console.log(`Testing TCP ${ip}:${port}...`);
-            const ok = await testTcpConnection(ip, port, 4000);
-            if (ok) {
-                console.log(`SMTP resolved: ${ip}:${port} (secure=${secure})`);
-                return {
-                    host: ip,
-                    port,
-                    secure,
-                    tlsOptions: { servername: originalHost },
-                };
-            }
-        }
-    }
-
-    // Nothing reachable — fall back to original hostname so nodemailer can try
-    console.warn("All TCP checks failed. Falling back to original SMTP hostname.");
-    return {
-        host: originalHost,
-        port: configuredPort,
-        secure: configuredPort === 465,
-        tlsOptions: { servername: originalHost },
-    };
-}
-
-// ── Transporter Factory ───────────────────────────────────────────────────────
-// Creates and verifies a fresh transporter. Retries up to `maxAttempts` times
-// with exponential back-off — critical for surviving Render cold-start lag.
-async function createVerifiedTransporter(maxAttempts = 5) {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
-            const smtp = await resolveSmtp();
-
-            const transporter = nodemailer.createTransport({
-                pool: false,          // Avoid stale pooled connections on Render
-                host: smtp.host,
-                port: smtp.port,
-                secure: smtp.secure,
-                auth: {
-                    user: process.env.SMTP_USER,
-                    pass: process.env.SMTP_PASS,
+            const response = await fetch("https://api.resend.com/emails", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${process.env.RESEND_API_KEY}`
                 },
-                tls: smtp.tlsOptions,
-                connectionTimeout: 10_000,  // Render needs more generous timeouts
-                greetingTimeout: 10_000,
-                socketTimeout: 15_000,
+                body: JSON.stringify({
+                    from: from || process.env.EMAIL_FROM || "onboarding@resend.dev",
+                    to: toArray,
+                    subject,
+                    html,
+                    text
+                })
             });
 
-            await transporter.verify();
-            console.log(`SMTP verified successfully on attempt ${attempt}.`);
-            return transporter;
+            if (!response.ok) {
+                const errorDetails = await response.text();
+                throw new Error(`Status ${response.status}: ${errorDetails}`);
+            }
+
+            const data = await response.json();
+            return data;
         } catch (err) {
-            const delay = Math.min(1000 * 2 ** attempt, 30_000); // 2s, 4s, 8s … cap 30s
-            console.error(`SMTP verify failed (attempt ${attempt}/${maxAttempts}): ${err.message}`);
+            console.error(`[resend] Send failed (attempt ${attempt}/${maxAttempts}): ${err.message}`);
             if (attempt < maxAttempts) {
+                const delay = 1000 * attempt;
                 console.log(`Retrying in ${delay / 1000}s…`);
                 await sleep(delay);
             } else {
-                throw new Error(`SMTP could not be verified after ${maxAttempts} attempts: ${err.message}`);
-            }
-        }
-    }
-}
-
-// ── Send with auto-reconnect ──────────────────────────────────────────────────
-// Keeps a single shared transporter and rebuilds it on failure.
-let sharedTransporter = null;
-
-async function sendMailWithRetry(mailOptions, maxAttempts = 3) {
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        // Lazily create or reuse the transporter
-        if (!sharedTransporter) {
-            console.log("Creating new SMTP transporter…");
-            sharedTransporter = await createVerifiedTransporter();
-        }
-
-        try {
-            const info = await sharedTransporter.sendMail(mailOptions);
-            return info;
-        } catch (err) {
-            console.error(`sendMail failed (attempt ${attempt}/${maxAttempts}): ${err.message}`);
-
-            // Force a fresh transporter on the next attempt
-            sharedTransporter = null;
-
-            if (attempt < maxAttempts) {
-                const delay = 1000 * attempt; // 1s, 2s
-                console.log(`Retrying send in ${delay / 1000}s…`);
-                await sleep(delay);
-            } else {
-                throw err; // Let Bull mark the job as failed after all retries
+                throw err;
             }
         }
     }
@@ -460,7 +369,7 @@ const processEmailJob = async (job) => {
 
     const { subject, html, text } = template(data);
 
-    await sendMailWithRetry({
+    await sendMailWithResend({
         from: process.env.EMAIL_FROM,
         to: data.to,
         subject,
@@ -472,17 +381,7 @@ const processEmailJob = async (job) => {
 };
 
 // ── Boot Sequence ─────────────────────────────────────────────────────────────
-// IMPORTANT: Verify SMTP BEFORE registering Bull processors.
-// This ensures the worker doesn't silently accept jobs it can't send.
-console.log("Verifying SMTP before starting job processors…");
-try {
-    sharedTransporter = await createVerifiedTransporter(5);
-} catch (err) {
-    // Don't crash — log clearly and let individual job retries handle it.
-    // Bull will retry failed jobs; they won't be lost.
-    console.error("SMTP boot verification failed — jobs will retry per Bull config:", err.message);
-    sharedTransporter = null;
-}
+console.log("Resend email client configured. Starting job processors…");
 
 // Register processors for all known templates
 for (const name of Object.keys(templates)) {

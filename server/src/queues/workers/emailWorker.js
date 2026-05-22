@@ -15,15 +15,12 @@ function sleep(ms) {
 
 // ── SMTP Transporter ──────────────────────────────────────────────────────────
 const transporter = nodemailer.createTransport({
-    host:   process.env.SMTP_HOST,   // smtp.gmail.com
-    port:   Number(process.env.SMTP_PORT) || 587,
-    secure: false,                   // false = STARTTLS on port 587
+    host:   "smtp.gmail.com",
+    port:   465,
+    secure: true,                    // SSL on port 465 — works on Render (587 is blocked)
     auth: {
         user: process.env.SMTP_USER, // no.reply.collabboard@gmail.com
         pass: process.env.SMTP_PASS, // Gmail app password
-    },
-    tls: {
-        rejectUnauthorized: true,
     },
 });
 

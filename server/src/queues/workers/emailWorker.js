@@ -1,4 +1,7 @@
 import "dotenv/config";
+import dns from "node:dns";
+dns.setDefaultResultOrder("ipv4first");
+
 import mongoose from "mongoose";
 import cron from "node-cron";
 import nodemailer from "nodemailer";

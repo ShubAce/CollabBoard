@@ -11,5 +11,8 @@ RUN pnpm install --frozen-lockfile
 # Copy source
 COPY . .
 
+# Ensure start script is executable
+RUN chmod +x start.sh
+
 EXPOSE 5000
-CMD ["node", "server.js"]
+CMD ["./start.sh"]

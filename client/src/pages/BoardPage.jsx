@@ -1301,7 +1301,6 @@ export default function BoardPage() {
 										ref={provided.innerRef}
 										{...provided.droppableProps}
 										className="board-columns-container"
-										style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 8 }}
 									>
 										{filteredColumns.map((column, index) => {
 											const tasks = [...(column.tasks || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));

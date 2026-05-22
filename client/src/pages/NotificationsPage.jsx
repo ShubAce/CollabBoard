@@ -161,6 +161,12 @@ function NotifRow({ notif, onRead, onDelete }) {
 export default function NotificationsPage() {
 	const [notifications, setNotifications] = useState([]);
 	const [unreadCount, setUnreadCount] = useState(0);
+
+	const updateGlobalCount = (newCount) => {
+		setUnreadCount(newCount);
+		window.dispatchEvent(new CustomEvent("notifications:update", { detail: newCount }));
+	};
+
 	const [status, setStatus] = useState("loading");
 	const [markingAll, setMarkingAll] = useState(false);
 	const [filter, setFilter] = useState("all");
@@ -173,7 +179,7 @@ export default function NotificationsPage() {
 			.then(({ data }) => {
 				if (!active) return;
 				setNotifications(data.notifications);
-				setUnreadCount(data.unreadCount);
+				updateGlobalCount(data.unreadCount);
 				setStatus("ready");
 			})
 			.catch(() => { if (active) setStatus("error"); });
@@ -185,7 +191,7 @@ export default function NotificationsPage() {
 			try {
 				await api.patch(`/notifications/${notif._id}/read`);
 				setNotifications(prev => prev.map(n => n._id === notif._id ? { ...n, isRead: true } : n));
-				setUnreadCount(c => Math.max(0, c - 1));
+				updateGlobalCount(Math.max(0, unreadCount - 1));
 			} catch { /* ignore */ }
 		}
 		if (notif.type === "workspace_invite" && (notif.payload?.inviteStatus === "accepted" || !notif.payload?.inviteToken)) return;
@@ -200,7 +206,7 @@ export default function NotificationsPage() {
 		try {
 			await api.patch("/notifications/read-all");
 			setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
-			setUnreadCount(0);
+			updateGlobalCount(0);
 		} catch { /* ignore */ } finally { setMarkingAll(false); }
 	};
 
@@ -209,7 +215,7 @@ export default function NotificationsPage() {
 			await api.delete(`/notifications/${notifId}`);
 			setNotifications(prev => {
 				const n = prev.find(x => x._id === notifId);
-				if (n && !n.isRead) setUnreadCount(c => Math.max(0, c - 1));
+				if (n && !n.isRead) updateGlobalCount(Math.max(0, unreadCount - 1));
 				return prev.filter(x => x._id !== notifId);
 			});
 		} catch { /* ignore */ }

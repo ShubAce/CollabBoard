@@ -1470,6 +1470,13 @@
 }
 
 /* ── Kanban Column ───────────────────────────────────────────────────── */
+.board-columns-container {
+	display: flex;
+	gap: 16px;
+	overflow-x: auto;
+	padding-bottom: 8px;
+}
+
 .kanban-col {
 	width: 280px;
 	flex-shrink: 0;
@@ -1477,6 +1484,28 @@
 	display: flex;
 	flex-direction: column;
 	max-height: calc(100vh - 180px);
+}
+
+@media (max-width: 768px) {
+	.board-columns-container {
+		flex-direction: column;
+		gap: 12px;
+		overflow-x: hidden;
+		overflow-y: visible;
+	}
+	.kanban-col {
+		width: 100%;
+		max-height: none; /* Let columns expand fully vertically on mobile */
+	}
+	.kanban-col-body {
+		max-height: 150px; /* roughly 1 task */
+	}
+	.task-card {
+		padding: 10px;
+	}
+	.kanban-col-header {
+		padding: 8px 10px;
+	}
 }
 
 .kanban-col-header {
@@ -1496,6 +1525,7 @@
 	display: flex;
 	flex-direction: column;
 	gap: 8px;
+	max-height: 300px; /* roughly 2 tasks */
 }
 
 @media (max-width: 1024px) {

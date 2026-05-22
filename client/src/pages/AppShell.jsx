@@ -220,6 +220,12 @@ export default function AppShell() {
 	}, [accessToken]);
 
 	useEffect(() => {
+		const handleUpdate = (e) => setUnreadCount(e.detail);
+		window.addEventListener("notifications:update", handleUpdate);
+		return () => window.removeEventListener("notifications:update", handleUpdate);
+	}, []);
+
+	useEffect(() => {
 		const handleKey = (event) => {
 			const key = event.key?.toLowerCase();
 			if ((event.ctrlKey || event.metaKey) && key === "k") {

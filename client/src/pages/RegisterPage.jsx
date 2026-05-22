@@ -11,7 +11,7 @@ function AuthCard({ children }) {
 			<div className="fade-in" style={{ position: "relative", width: "100%", maxWidth: 440, background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-xl)", boxShadow: "var(--shadow-modal)", overflow: "hidden" }}>
 				<div style={{ padding: "24px 28px 0", display: "flex", alignItems: "center", gap: 8 }}>
 					<Link to="/" style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none" }}>
-						<Icon name="spark" size={20} style={{ color: "var(--accent)" }} />
+						<img src="/logo.png" alt="CollabBoard Logo" style={{ width: 20, height: 20, objectFit: "contain" }} />
 						<span style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)" }}>CollabBoard</span>
 					</Link>
 				</div>

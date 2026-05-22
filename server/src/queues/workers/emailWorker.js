@@ -17,10 +17,11 @@ function sleep(ms) {
 const transporter = nodemailer.createTransport({
     host:   "smtp.gmail.com",
     port:   465,
-    secure: true,                    // SSL on port 465 — works on Render (587 is blocked)
+    secure: true,
+    family: 4,                       // Force IPv4 — Render does not support IPv6
     auth: {
-        user: process.env.SMTP_USER, // no.reply.collabboard@gmail.com
-        pass: process.env.SMTP_PASS, // Gmail app password
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
     },
 });
 

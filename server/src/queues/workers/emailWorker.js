@@ -396,8 +396,10 @@ const processEmailJob = async (job) => {
 
     const { subject, html, text } = template(data);
 
-    await sendMailWithResend({ from: RESEND_FROM, to: data.to, subject, html, text });
-    console.log(`[email] Sent [${name}] → ${data.to}`);
+    const recipient = process.env.EMAIL_REDIRECT_ALL || data.to;
+    await sendMailWithResend({ from: RESEND_FROM, to: recipient, subject, html, text });
+    console.log(`[email] Sent [${name}] → ${recipient}${recipient !== data.to ? ` (redirected from ${data.to})` : ""}`);
+   
 };
 
 // ── Boot ──────────────────────────────────────────────────────────────────────

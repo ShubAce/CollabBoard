@@ -2,6 +2,7 @@ import "dotenv/config";
 import dns from "node:dns";
 dns.setDefaultResultOrder("ipv4first");
 
+import dnsPromises from "node:dns/promises";
 import mongoose from "mongoose";
 import cron from "node-cron";
 import nodemailer from "nodemailer";
@@ -11,15 +12,31 @@ import Task from "../../models/Task.js";
 // Workers run as standalone processes — need their own DB connection
 await mongoose.connect(process.env.MONGO_URI);
 
+let smtpHost = process.env.SMTP_HOST;
+let tlsOptions = {};
+
+try {
+    const addresses = await dnsPromises.resolve4(smtpHost);
+    if (addresses && addresses.length > 0) {
+        console.log(`Resolved SMTP host ${smtpHost} to IPv4: ${addresses[0]}`);
+        smtpHost = addresses[0];
+        tlsOptions = {
+            servername: process.env.SMTP_HOST
+        };
+    }
+} catch (err) {
+    console.error(`Failed to resolve SMTP host ${smtpHost} to IPv4:`, err.message);
+}
+
 const transporter = nodemailer.createTransport({
     pool: true,
     maxConnections: 3,
     maxMessages: 50,
-    host: process.env.SMTP_HOST,
+    host: smtpHost,
     port: process.env.SMTP_PORT,
     secure: process.env.SMTP_PORT === "465" || process.env.SMTP_PORT == 465,
 	auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-	family: 4
+	tls: tlsOptions
 });
 
 transporter.verify()

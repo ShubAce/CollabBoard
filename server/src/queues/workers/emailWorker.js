@@ -9,6 +9,9 @@ import Task from "../../models/Task.js";
 await mongoose.connect(process.env.MONGO_URI);
 
 const transporter = nodemailer.createTransport({
+	pool: true,
+	maxConnections: 3,
+	maxMessages: 50,
 	host: process.env.SMTP_HOST,
 	port: process.env.SMTP_PORT,
 	secure: process.env.SMTP_PORT === "465" || process.env.SMTP_PORT == 465,

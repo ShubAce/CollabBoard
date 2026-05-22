@@ -1,16 +1,4 @@
 import "dotenv/config";
-import dns from "node:dns";
-
-// 1. Force IPv4 priority for Node (critical on Render)
-dns.setDefaultResultOrder("ipv4first");
-
-try {
-    dns.setServers(["8.8.8.8", "8.8.4.4"]);
-    console.log("DNS servers set to Google Public DNS.");
-} catch (err) {
-    console.warn("Could not set DNS servers:", err.message);
-}
-
 import mongoose from "mongoose";
 import cron from "node-cron";
 import emailQueue from "../emailQueue.js";
@@ -20,49 +8,68 @@ import Task from "../../models/Task.js";
 await mongoose.connect(process.env.MONGO_URI);
 console.log("MongoDB connected.");
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
 function sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    return new Promise((r) => setTimeout(r, ms));
 }
 
-// ── Resend API Integrations ───────────────────────────────────────────────────
+// ── Resend Sender Resolution ──────────────────────────────────────────────────
+// Resend requires the `from` address to use a domain you've verified in their
+// dashboard (app.resend.com/domains). On the free plan without a custom domain,
+// the only usable sender is: onboarding@resend.dev
+//
+// YOUR CURRENT EMAIL_FROM uses @gmail.com which Resend will reject with 403.
+//
+// Fix (pick one):
+//   A) Verify your own domain at app.resend.com/domains, then set:
+//        EMAIL_FROM="CollabBoard <you@yourdomain.com>"
+//   B) Leave EMAIL_FROM as-is and set RESEND_FROM_OVERRIDE in Render:
+//        RESEND_FROM_OVERRIDE="CollabBoard <you@yourdomain.com>"
+//   C) For quick testing only — no override needed, falls back to onboarding@resend.dev
+//
+// The function below resolves the right from address automatically.
+function resolveFromAddress() {
+    // Explicit override always wins (set this in Render env vars)
+    if (process.env.RESEND_FROM_OVERRIDE) {
+        return process.env.RESEND_FROM_OVERRIDE.trim();
+    }
+
+    const raw = (process.env.EMAIL_FROM || "").trim();
+
+    // Strip outer quotes that .env files sometimes add: "CollabBoard <x>" → CollabBoard <x>
+    const unquoted = raw.replace(/^["']|["']$/g, "").trim();
+
+    // Extract the email address from "Display Name <email@domain.com>" format
+    const match = unquoted.match(/<([^>]+)>/);
+    const emailAddress = match ? match[1].trim() : unquoted;
+
+    // Resend will reject any @gmail.com, @yahoo.com, etc. as the sender
+    // unless you own and verify that domain. Fall back to their sandbox address.
+    const isFreeProvider = /\@(gmail|yahoo|hotmail|outlook|icloud)\.com$/i.test(emailAddress);
+    if (isFreeProvider || !emailAddress.includes("@")) {
+        console.warn(
+            `[resend] EMAIL_FROM uses "${emailAddress}" which is not a Resend-verified domain.\n` +
+            `         Falling back to onboarding@resend.dev for testing.\n` +
+            `         To send from your own address, verify a domain at app.resend.com/domains\n` +
+            `         and set RESEND_FROM_OVERRIDE="CollabBoard <you@yourdomain.com>" in Render.`
+        );
+        return "CollabBoard <onboarding@resend.dev>";
+    }
+
+    // Use the cleaned unquoted value as-is
+    return unquoted;
+}
+
+const RESEND_FROM = resolveFromAddress();
+console.log(`[resend] Sending from: ${RESEND_FROM}`);
+
+// ── Resend Send Function ──────────────────────────────────────────────────────
 async function sendMailWithResend(mailOptions, maxAttempts = 3) {
-    const { from, to, subject, html, text } = mailOptions;
-
     if (!process.env.RESEND_API_KEY) {
-        throw new Error("RESEND_API_KEY environment variable is not defined.");
+        throw new Error("RESEND_API_KEY is not set in environment variables.");
     }
 
+    const { to, subject, html, text } = mailOptions;
     const toArray = Array.isArray(to) ? to : [to];
-
-    // Self-healing from-field parsing and sanitization
-    let cleanFrom = from || process.env.EMAIL_FROM || "onboarding@resend.dev";
-    cleanFrom = cleanFrom.replace(/^['"]|['"]$/g, "").trim();
-
-    const emailRegex = /^(?:["']?([^"']+)["']?\s+)?<([^>]+)>$/;
-    const match = cleanFrom.match(emailRegex);
-
-    if (match) {
-        let displayName = match[1] ? match[1].trim() : "";
-        let emailAddress = match[2] ? match[2].trim() : "";
-
-        // If it's an unverified domain type (e.g. Gmail), rewrite the domain portion to onboarding@resend.dev
-        if (emailAddress.includes("@gmail.com") || emailAddress.includes("your_email") || emailAddress.includes("example.com")) {
-            emailAddress = "onboarding@resend.dev";
-        }
-
-        if (displayName) {
-            cleanFrom = `${displayName} <${emailAddress}>`;
-        } else {
-            cleanFrom = emailAddress;
-        }
-    } else {
-        let emailAddress = cleanFrom;
-        if (emailAddress.includes("@gmail.com") || emailAddress.includes("your_email") || emailAddress.includes("example.com")) {
-            emailAddress = "onboarding@resend.dev";
-        }
-        cleanFrom = emailAddress;
-    }
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
@@ -70,29 +77,28 @@ async function sendMailWithResend(mailOptions, maxAttempts = 3) {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
-                    "Authorization": `Bearer ${process.env.RESEND_API_KEY}`
+                    "Authorization": `Bearer ${process.env.RESEND_API_KEY}`,
                 },
                 body: JSON.stringify({
-                    from: cleanFrom,
+                    from: RESEND_FROM,
                     to: toArray,
                     subject,
                     html,
-                    text
-                })
+                    text,
+                }),
             });
 
             if (!response.ok) {
-                const errorDetails = await response.text();
-                throw new Error(`Status ${response.status}: ${errorDetails}`);
+                const errorText = await response.text();
+                throw new Error(`Resend API ${response.status}: ${errorText}`);
             }
 
-            const data = await response.json();
-            return data;
+            return await response.json();
         } catch (err) {
-            console.error(`[resend] Send failed (attempt ${attempt}/${maxAttempts}): ${err.message}`);
+            console.error(`[resend] Attempt ${attempt}/${maxAttempts} failed: ${err.message}`);
             if (attempt < maxAttempts) {
-                const delay = 1000 * attempt;
-                console.log(`Retrying in ${delay / 1000}s…`);
+                const delay = 1000 * attempt; // 1s, 2s
+                console.log(`[resend] Retrying in ${delay / 1000}s…`);
                 await sleep(delay);
             } else {
                 throw err;
@@ -131,34 +137,27 @@ const escapeHtml = (value) =>
         .replace(/'/g, "&#39;");
 
 const ICONS = {
-    userPlus: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>`,
+    userPlus:       `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>`,
     clipboardCheck: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M15 2H9a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1Z"/><path d="m9 14 2 2 4-4"/></svg>`,
-    messageCircle: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>`,
-    hash: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="20" y1="9" y2="9"/><line x1="4" x2="20" y1="15" y2="15"/><line x1="10" x2="8" y1="3" y2="21"/><line x1="16" x2="14" y1="3" y2="21"/></svg>`,
-    key: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/></svg>`,
-    clock: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
+    messageCircle:  `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>`,
+    hash:           `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="20" y1="9" y2="9"/><line x1="4" x2="20" y1="15" y2="15"/><line x1="10" x2="8" y1="3" y2="21"/><line x1="16" x2="14" y1="3" y2="21"/></svg>`,
+    key:            `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/></svg>`,
+    clock:          `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
 };
 
 const THEMES = {
-    invite: "#4F46E5",
-    task: "#10B981",
-    comment: "#0EA5E9",
-    chat: "#EC4899",
+    invite:   "#4F46E5",
+    task:     "#10B981",
+    comment:  "#0EA5E9",
+    chat:     "#EC4899",
     password: "#F59E0B",
-    alert: "#EF4444",
+    alert:    "#EF4444",
 };
 
 const renderEmail = ({
-    subject,
-    preheader,
-    greeting,
-    message,
-    ctaLabel,
-    ctaUrl,
-    details = [],
-    footerNote,
-    themeColor = BRAND.accent,
-    iconSvg,
+    subject, preheader, greeting, message,
+    ctaLabel, ctaUrl, details = [], footerNote,
+    themeColor = BRAND.accent, iconSvg,
 }) => {
     const themedIcon = iconSvg ? iconSvg.replace('stroke="currentColor"', `stroke="${themeColor}"`) : "";
     const validDetails = details.filter((item) => item?.value);
@@ -189,7 +188,7 @@ const renderEmail = ({
                 border-radius:8px;
                 font-size:15px;
                 font-weight:600;
-                box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+                box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);
             ">
                 ${escapeHtml(ctaLabel)}
             </a>
@@ -203,12 +202,11 @@ const renderEmail = ({
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light" />
-    <meta name="supported-color-schemes" content="light" />
     <title>${escapeHtml(subject)}</title>
 </head>
 <body style="margin:0; padding:0; background-color:${BRAND.bg}; font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; -webkit-font-smoothing:antialiased;">
 
-    <div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent; font-size:0;">
+    <div style="display:none; max-height:0; overflow:hidden; color:transparent; font-size:0;">
         ${escapeHtml(preheader || subject)}
     </div>
 
@@ -309,8 +307,8 @@ const templates = {
             ctaUrl: data.inviteUrl,
             details: [
                 { label: "Workspace", value: data.workspaceName },
-                { label: "Role", value: data.role },
-                { label: "Invited by", value: data.inviterName },
+                { label: "Role",      value: data.role },
+                { label: "Invited by",value: data.inviterName },
             ],
             footerNote: "If you were not expecting this invite, you can safely ignore this email.",
             themeColor: THEMES.invite,
@@ -327,7 +325,7 @@ const templates = {
             ctaUrl: data.taskUrl,
             details: [
                 { label: "Board", value: data.boardName },
-                { label: "Task", value: data.taskTitle },
+                { label: "Task",  value: data.taskTitle },
             ],
             footerNote: "Open CollabBoard to view updates and collaborate with your team.",
             themeColor: THEMES.task,
@@ -398,34 +396,25 @@ const processEmailJob = async (job) => {
 
     const { subject, html, text } = template(data);
 
-    await sendMailWithResend({
-        from: process.env.EMAIL_FROM,
-        to: data.to,
-        subject,
-        html,
-        text,
-    });
-
+    await sendMailWithResend({ from: RESEND_FROM, to: data.to, subject, html, text });
     console.log(`[email] Sent [${name}] → ${data.to}`);
 };
 
-// ── Boot Sequence ─────────────────────────────────────────────────────────────
-console.log("Resend email client configured. Starting job processors…");
+// ── Boot ──────────────────────────────────────────────────────────────────────
+if (!process.env.RESEND_API_KEY) {
+    console.error("FATAL: RESEND_API_KEY is not set. Email worker cannot send emails.");
+    process.exit(1);
+}
 
-// Register processors for all known templates
+console.log("Starting email job processors…");
 for (const name of Object.keys(templates)) {
     emailQueue.process(name, processEmailJob);
 }
 
-emailQueue.on("failed", (job, err) => {
-    console.error(`[email] Job failed [${job.name}] → ${job.data?.to}: ${err.message}`);
-});
+emailQueue.on("failed",    (job, err) => console.error(`[email] FAILED  [${job.name}] → ${job.data?.to}: ${err.message}`));
+emailQueue.on("completed", (job)      => console.log(`[email] SENT    [${job.name}] → ${job.data?.to}`));
 
-emailQueue.on("completed", (job) => {
-    console.log(`[email] Job completed [${job.name}] → ${job.data?.to}`);
-});
-
-// ── Due-date Reminder Cron ────────────────────────────────────────────────────
+// ── Due-date Reminder Cron ─────────────────────────────────────────────────────
 cron.schedule("0 9 * * *", async () => {
     console.log("[cron] Running due-date reminder job…");
     try {
@@ -439,42 +428,34 @@ cron.schedule("0 9 * * *", async () => {
 
         const dueTasks = await Task.find({
             dueDate: { $gte: startOfTomorrow, $lte: endOfTomorrow },
-            status: { $ne: "done" },
+            status:  { $ne: "done" },
         }).populate("assignees", "name email");
 
         let queued = 0;
         for (const task of dueTasks) {
             for (const assignee of task.assignees) {
                 await emailQueue.add("send_task_due_reminder", {
-                    to: assignee.email,
-                    userName: assignee.name,
+                    to:        assignee.email,
+                    userName:  assignee.name,
                     taskTitle: task.title,
-                    taskUrl: `${process.env.CLIENT_URL}/app/workspaces/${task.workspace}/boards/${task.board}`,
+                    taskUrl:   `${process.env.CLIENT_URL}/app/workspaces/${task.workspace}/boards/${task.board}`,
                 });
                 queued++;
             }
         }
         console.log(`[cron] Queued ${queued} due-date reminder(s).`);
     } catch (err) {
-        console.error("[cron] Due-date reminder error:", err.message);
+        console.error("[cron] Error:", err.message);
     }
 });
 
 // ── Graceful Shutdown ─────────────────────────────────────────────────────────
-// Render sends SIGTERM before killing the process. This gives in-flight jobs
-// time to finish rather than being dropped mid-send.
 async function gracefulShutdown(signal) {
     console.log(`[shutdown] ${signal} received — draining email queue…`);
-    try {
-        await emailQueue.close();
-        console.log("[shutdown] Queue drained. Exiting cleanly.");
-    } catch (err) {
-        console.error("[shutdown] Error during drain:", err.message);
-    }
+    try { await emailQueue.close(); } catch (_) {}
     process.exit(0);
 }
-
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
-process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
 
-console.log("Email worker ready. Listening for jobs (cron: due-date reminders at 9 AM daily).");
+console.log("Email worker ready. Cron: due-date reminders at 9 AM daily.");

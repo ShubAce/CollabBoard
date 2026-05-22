@@ -1,14 +1,14 @@
 import "dotenv/config";
 import dns from "node:dns";
-// 1. Force IPv4 priority for Node
+
+// 1. Force IPv4 priority for Node (critical on Render)
 dns.setDefaultResultOrder("ipv4first");
 
-// 2. Set public DNS servers to bypass Render's broken/slow DNS resolver
 try {
     dns.setServers(["8.8.8.8", "8.8.4.4"]);
-    console.log("Process DNS servers set to Google Public DNS.");
+    console.log("DNS servers set to Google Public DNS.");
 } catch (err) {
-    console.warn("Could not set process DNS servers:", err.message);
+    console.warn("Could not set DNS servers:", err.message);
 }
 
 import dnsPromises from "node:dns/promises";
@@ -19,127 +19,161 @@ import nodemailer from "nodemailer";
 import emailQueue from "../emailQueue.js";
 import Task from "../../models/Task.js";
 
-// Workers run as standalone processes — need their own DB connection
+// ── DB Connection ─────────────────────────────────────────────────────────────
 await mongoose.connect(process.env.MONGO_URI);
+console.log("MongoDB connected.");
 
-// Helper to quickly test TCP connectivity
-function testTcpConnection(host, port, timeout = 2500) {
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function testTcpConnection(host, port, timeout = 4000) {
     return new Promise((resolve) => {
         const socket = new net.Socket();
         socket.setTimeout(timeout);
-        
-        socket.connect(port, host, () => {
-            socket.destroy();
-            resolve(true);
-        });
-        
-        const onError = () => {
-            socket.destroy();
-            resolve(false);
-        };
-        
+        socket.connect(port, host, () => { socket.destroy(); resolve(true); });
+        const onError = () => { socket.destroy(); resolve(false); };
         socket.on("error", onError);
         socket.on("timeout", onError);
     });
 }
 
-let smtpHost = process.env.SMTP_HOST;
-let smtpPort = parseInt(process.env.SMTP_PORT || "587");
-let isSecure = smtpPort === 465;
-let tlsOptions = { servername: process.env.SMTP_HOST };
+// ── SMTP Resolution ───────────────────────────────────────────────────────────
+// Resolves the best reachable SMTP IP+port combo.
+// Returns { host, port, secure, tlsOptions } or throws if nothing reachable.
+async function resolveSmtp() {
+    const originalHost = process.env.SMTP_HOST;
+    const configuredPort = parseInt(process.env.SMTP_PORT || "587");
 
-try {
-    // Resolve all IPv4 addresses for the SMTP host
-    const addresses = await dnsPromises.resolve4(smtpHost);
-    console.log(`Resolved SMTP host ${smtpHost} to IPs:`, addresses);
+    let addresses;
+    try {
+        addresses = await dnsPromises.resolve4(originalHost);
+        console.log(`Resolved ${originalHost} →`, addresses);
+    } catch (err) {
+        console.warn(`DNS resolution failed for ${originalHost}, falling back to hostname directly:`, err.message);
+        // Use hostname as-is and let nodemailer resolve it
+        return {
+            host: originalHost,
+            port: configuredPort,
+            secure: configuredPort === 465,
+            tlsOptions: { servername: originalHost },
+        };
+    }
 
-    if (addresses && addresses.length > 0) {
-        let workingIp = null;
-        let workingPort = smtpPort;
-        let workingSecure = isSecure;
+    // Port candidates: try configured port first, then the other common port
+    const portCandidates = configuredPort === 465
+        ? [{ port: 465, secure: true }, { port: 587, secure: false }]
+        : [{ port: configuredPort, secure: configuredPort === 465 }, { port: 465, secure: true }];
 
-        // 1. Try configured port across all resolved IPs
+    for (const { port, secure } of portCandidates) {
         for (const ip of addresses) {
-            console.log(`Testing TCP connection to ${ip}:${smtpPort}...`);
-            const isReachable = await testTcpConnection(ip, smtpPort, 2000);
-            if (isReachable) {
-                workingIp = ip;
-                console.log(`Found working SMTP server at ${ip}:${smtpPort}`);
-                break;
+            console.log(`Testing TCP ${ip}:${port}...`);
+            const ok = await testTcpConnection(ip, port, 4000);
+            if (ok) {
+                console.log(`SMTP resolved: ${ip}:${port} (secure=${secure})`);
+                return {
+                    host: ip,
+                    port,
+                    secure,
+                    tlsOptions: { servername: originalHost },
+                };
             }
-        }
-
-        // 2. Fallback: If configured port (e.g. 587) failed, try 465 (Secure SSL/TLS)
-        if (!workingIp && smtpPort !== 465) {
-            console.warn(`All connection attempts to port ${smtpPort} timed out. Trying fallback port 465 (Secure SSL/TLS)...`);
-            for (const ip of addresses) {
-                const isReachable = await testTcpConnection(ip, 465, 2000);
-                if (isReachable) {
-                    workingIp = ip;
-                    workingPort = 465;
-                    workingSecure = true;
-                    console.log(`SMTP self-healed: Found working fallback SMTP server at ${ip}:465 (Secure SSL/TLS)`);
-                    break;
-                }
-            }
-        }
-
-        // 3. Fallback: If both failed, try 587 if configured port was 465
-        if (!workingIp && smtpPort === 465) {
-            console.warn(`All connection attempts to port 465 timed out. Trying fallback port 587 (STARTTLS)...`);
-            for (const ip of addresses) {
-                const isReachable = await testTcpConnection(ip, 587, 2000);
-                if (isReachable) {
-                    workingIp = ip;
-                    workingPort = 587;
-                    workingSecure = false;
-                    console.log(`SMTP self-healed: Found working fallback SMTP server at ${ip}:587 (STARTTLS)`);
-                    break;
-                }
-            }
-        }
-
-        if (workingIp) {
-            smtpHost = workingIp;
-            smtpPort = workingPort;
-            isSecure = workingSecure;
-            tlsOptions = {
-                servername: process.env.SMTP_HOST
-            };
-        } else {
-            console.error("Warning: All SMTP servers and port combinations failed TCP reachability tests. Proceeding with default configuration.");
         }
     }
-} catch (err) {
-    console.error(`Failed to resolve SMTP host ${smtpHost} to IPv4:`, err.message);
+
+    // Nothing reachable — fall back to original hostname so nodemailer can try
+    console.warn("All TCP checks failed. Falling back to original SMTP hostname.");
+    return {
+        host: originalHost,
+        port: configuredPort,
+        secure: configuredPort === 465,
+        tlsOptions: { servername: originalHost },
+    };
 }
 
-const transporter = nodemailer.createTransport({
-    pool: false, // Turn off pooling to avoid silently dropped connections causing timeouts
-    host: smtpHost,
-    port: smtpPort,
-    secure: isSecure,
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-    tls: tlsOptions,
-    connectionTimeout: 5000, // Fail fast (5 seconds) so Bull queue can retry quickly
-    greetingTimeout: 5000,
-    socketTimeout: 5000
-});
+// ── Transporter Factory ───────────────────────────────────────────────────────
+// Creates and verifies a fresh transporter. Retries up to `maxAttempts` times
+// with exponential back-off — critical for surviving Render cold-start lag.
+async function createVerifiedTransporter(maxAttempts = 5) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            const smtp = await resolveSmtp();
 
-transporter.verify()
-    .then(() => console.log("SMTP connection verified successfully!"))
-    .catch((err) => console.error("SMTP verification failed. Emails will not send:", err.message));
+            const transporter = nodemailer.createTransport({
+                pool: false,          // Avoid stale pooled connections on Render
+                host: smtp.host,
+                port: smtp.port,
+                secure: smtp.secure,
+                auth: {
+                    user: process.env.SMTP_USER,
+                    pass: process.env.SMTP_PASS,
+                },
+                tls: smtp.tlsOptions,
+                connectionTimeout: 10_000,  // Render needs more generous timeouts
+                greetingTimeout: 10_000,
+                socketTimeout: 15_000,
+            });
 
+            await transporter.verify();
+            console.log(`SMTP verified successfully on attempt ${attempt}.`);
+            return transporter;
+        } catch (err) {
+            const delay = Math.min(1000 * 2 ** attempt, 30_000); // 2s, 4s, 8s … cap 30s
+            console.error(`SMTP verify failed (attempt ${attempt}/${maxAttempts}): ${err.message}`);
+            if (attempt < maxAttempts) {
+                console.log(`Retrying in ${delay / 1000}s…`);
+                await sleep(delay);
+            } else {
+                throw new Error(`SMTP could not be verified after ${maxAttempts} attempts: ${err.message}`);
+            }
+        }
+    }
+}
+
+// ── Send with auto-reconnect ──────────────────────────────────────────────────
+// Keeps a single shared transporter and rebuilds it on failure.
+let sharedTransporter = null;
+
+async function sendMailWithRetry(mailOptions, maxAttempts = 3) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        // Lazily create or reuse the transporter
+        if (!sharedTransporter) {
+            console.log("Creating new SMTP transporter…");
+            sharedTransporter = await createVerifiedTransporter();
+        }
+
+        try {
+            const info = await sharedTransporter.sendMail(mailOptions);
+            return info;
+        } catch (err) {
+            console.error(`sendMail failed (attempt ${attempt}/${maxAttempts}): ${err.message}`);
+
+            // Force a fresh transporter on the next attempt
+            sharedTransporter = null;
+
+            if (attempt < maxAttempts) {
+                const delay = 1000 * attempt; // 1s, 2s
+                console.log(`Retrying send in ${delay / 1000}s…`);
+                await sleep(delay);
+            } else {
+                throw err; // Let Bull mark the job as failed after all retries
+            }
+        }
+    }
+}
+
+// ── Brand & Templates ─────────────────────────────────────────────────────────
 const BRAND = {
     name: "CollabBoard",
-    accent: "#4F46E5", // Modern Indigo
-    bg: "#F3F4F6", // Gray 100
+    accent: "#4F46E5",
+    bg: "#F3F4F6",
     card: "#FFFFFF",
-    textMain: "#111827", // Gray 900
-    textSecondary: "#4B5563", // Gray 600
-    muted: "#9CA3AF", // Gray 400
-    border: "#E5E7EB", // Gray 200
-    plate: "#F9FAFB" // Gray 50
+    textMain: "#111827",
+    textSecondary: "#4B5563",
+    muted: "#9CA3AF",
+    border: "#E5E7EB",
+    plate: "#F9FAFB",
 };
 
 const BRAND_LOGO = `
@@ -168,12 +202,12 @@ const ICONS = {
 };
 
 const THEMES = {
-    invite: "#4F46E5",  // Indigo
-    task: "#10B981",    // Emerald
-    comment: "#0EA5E9", // Sky
-    chat: "#EC4899",    // Pink
-    password: "#F59E0B",// Amber
-    alert: "#EF4444",   // Red
+    invite: "#4F46E5",
+    task: "#10B981",
+    comment: "#0EA5E9",
+    chat: "#EC4899",
+    password: "#F59E0B",
+    alert: "#EF4444",
 };
 
 const renderEmail = ({
@@ -188,14 +222,13 @@ const renderEmail = ({
     themeColor = BRAND.accent,
     iconSvg,
 }) => {
-    // Inject the theme color into the SVG stroke for a matching aesthetic
-    const themedIcon = iconSvg ? iconSvg.replace('stroke="currentColor"', `stroke="${themeColor}"`) : '';
-
+    const themedIcon = iconSvg ? iconSvg.replace('stroke="currentColor"', `stroke="${themeColor}"`) : "";
     const validDetails = details.filter((item) => item?.value);
+
     const detailHtml = validDetails.length > 0 ? `
         <div style="background:${BRAND.plate}; border:1px solid ${BRAND.border}; border-radius:12px; padding:20px; margin-top:24px; margin-bottom:24px;">
             ${validDetails.map((item, index) => `
-                <div style="display:block; ${index !== 0 ? 'margin-top:16px;' : ''}">
+                <div style="display:block; ${index !== 0 ? "margin-top:16px;" : ""}">
                     <div style="font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.05em; color:${BRAND.muted}; margin-bottom:4px;">
                         ${escapeHtml(item.label)}
                     </div>
@@ -218,7 +251,7 @@ const renderEmail = ({
                 border-radius:8px;
                 font-size:15px;
                 font-weight:600;
-                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+                box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
             ">
                 ${escapeHtml(ctaLabel)}
             </a>
@@ -235,27 +268,16 @@ const renderEmail = ({
     <meta name="supported-color-schemes" content="light" />
     <title>${escapeHtml(subject)}</title>
 </head>
+<body style="margin:0; padding:0; background-color:${BRAND.bg}; font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; -webkit-font-smoothing:antialiased;">
 
-<body style="
-    margin:0;
-    padding:0;
-    background-color:${BRAND.bg};
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-">
-
-    <!-- Preheader text for email clients -->
     <div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent; font-size:0;">
         ${escapeHtml(preheader || subject)}
     </div>
 
-    <!-- Main Container -->
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:40px 16px; width:100%;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:40px 16px;">
         <tr>
             <td align="center">
 
-                <!-- Logo Header -->
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px; margin-bottom:24px;">
                     <tr>
                         <td align="center">
@@ -267,42 +289,21 @@ const renderEmail = ({
                     </tr>
                 </table>
 
-                <!-- Email Card -->
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="
-                    max-width:600px;
-                    background-color:${BRAND.card};
-                    border-radius:16px;
-                    overflow:hidden;
-                    border:1px solid ${BRAND.border};
-                    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-                ">
-                    <!-- Top Theme Accent Bar -->
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px; background-color:${BRAND.card}; border-radius:16px; overflow:hidden; border:1px solid ${BRAND.border}; box-shadow:0 4px 6px -1px rgba(0,0,0,0.05);">
                     <tr>
-                        <td style="height:6px; background-color:${themeColor}; width:100%;"></td>
+                        <td style="height:6px; background-color:${themeColor};"></td>
                     </tr>
-
-                    <!-- Card Content -->
                     <tr>
                         <td style="padding:48px 40px;">
-                            
-                            <!-- Header / Title -->
                             <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:32px;">
                                 <tr>
                                     ${iconSvg ? `
                                     <td width="48" style="padding-right:16px;">
-                                        <div style="
-                                            width:48px; 
-                                            height:48px; 
-                                            border-radius:12px; 
-                                            background-color:${themeColor}1A; 
-                                            display:flex; 
-                                            align-items:center; 
-                                            justify-content:center;
-                                        ">
+                                        <div style="width:48px; height:48px; border-radius:12px; background-color:${themeColor}1A; display:flex; align-items:center; justify-content:center;">
                                             ${themedIcon}
                                         </div>
                                     </td>
-                                    ` : ''}
+                                    ` : ""}
                                     <td>
                                         <h1 style="margin:0; font-size:24px; font-weight:700; color:${BRAND.textMain}; line-height:1.2;">
                                             ${escapeHtml(subject)}
@@ -311,7 +312,6 @@ const renderEmail = ({
                                 </tr>
                             </table>
 
-                            <!-- Message Body -->
                             <p style="margin:0 0 12px; font-size:16px; font-weight:600; color:${BRAND.textMain};">
                                 ${escapeHtml(greeting || "Hi there,")}
                             </p>
@@ -321,7 +321,6 @@ const renderEmail = ({
                             </div>
 
                             ${detailHtml}
-
                             ${buttonHtml}
 
                             ${footerNote ? `
@@ -329,12 +328,10 @@ const renderEmail = ({
                                     ${escapeHtml(footerNote)}
                                 </div>
                             ` : ""}
-
                         </td>
                     </tr>
                 </table>
 
-                <!-- Email Footer -->
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px; margin-top:24px;">
                     <tr>
                         <td align="center" style="font-size:13px; line-height:1.6; color:${BRAND.muted};">
@@ -347,33 +344,22 @@ const renderEmail = ({
             </td>
         </tr>
     </table>
-
 </body>
-</html>
-`;
+</html>`;
 
     const textLines = [
-        subject,
-        "",
-        greeting || "Hi there,",
-        "",
-        message.replace(/<[^>]*>/g, ""),
-        "",
+        subject, "",
+        greeting || "Hi there,", "",
+        message.replace(/<[^>]*>/g, ""), "",
         ...validDetails.map((item) => `${item.label}: ${item.value}`),
         ctaLabel && ctaUrl ? `${ctaLabel}: ${ctaUrl}` : "",
-        "",
-        footerNote || "",
-    ]
-        .filter(Boolean)
-        .join("\n");
+        "", footerNote || "",
+    ].filter(Boolean).join("\n");
 
-    return {
-        subject,
-        html,
-        text: textLines,
-    };
+    return { subject, html, text: textLines };
 };
 
+// ── Email Templates ───────────────────────────────────────────────────────────
 const templates = {
     send_workspace_invite: (data) =>
         renderEmail({
@@ -392,6 +378,7 @@ const templates = {
             themeColor: THEMES.invite,
             iconSvg: ICONS.userPlus,
         }),
+
     send_task_assigned: (data) =>
         renderEmail({
             subject: `Task assigned: ${data.taskTitle || "New task"}`,
@@ -408,6 +395,7 @@ const templates = {
             themeColor: THEMES.task,
             iconSvg: ICONS.clipboardCheck,
         }),
+
     send_comment_mention: (data) =>
         renderEmail({
             subject: `${data.authorName || "Someone"} mentioned you`,
@@ -421,6 +409,7 @@ const templates = {
             themeColor: THEMES.comment,
             iconSvg: ICONS.messageCircle,
         }),
+
     send_chat_mention: (data) =>
         renderEmail({
             subject: `${data.authorName || "Someone"} mentioned you in chat`,
@@ -434,6 +423,7 @@ const templates = {
             themeColor: THEMES.chat,
             iconSvg: ICONS.hash,
         }),
+
     send_password_reset: (data) =>
         renderEmail({
             subject: "Reset your CollabBoard password",
@@ -446,6 +436,7 @@ const templates = {
             themeColor: THEMES.password,
             iconSvg: ICONS.key,
         }),
+
     send_task_due_reminder: (data) =>
         renderEmail({
             subject: `Task due tomorrow: ${data.taskTitle || "Upcoming task"}`,
@@ -461,33 +452,54 @@ const templates = {
         }),
 };
 
+// ── Job Processor ─────────────────────────────────────────────────────────────
 const processEmailJob = async (job) => {
     const { name, data } = job;
     const template = templates[name];
     if (!template) throw new Error(`Unknown email job: ${name}`);
 
     const { subject, html, text } = template(data);
-    await transporter.sendMail({
+
+    await sendMailWithRetry({
         from: process.env.EMAIL_FROM,
         to: data.to,
         subject,
         html,
         text,
     });
-    console.log(`Email sent [${name}] to ${data.to}`);
+
+    console.log(`[email] Sent [${name}] → ${data.to}`);
 };
 
+// ── Boot Sequence ─────────────────────────────────────────────────────────────
+// IMPORTANT: Verify SMTP BEFORE registering Bull processors.
+// This ensures the worker doesn't silently accept jobs it can't send.
+console.log("Verifying SMTP before starting job processors…");
+try {
+    sharedTransporter = await createVerifiedTransporter(5);
+} catch (err) {
+    // Don't crash — log clearly and let individual job retries handle it.
+    // Bull will retry failed jobs; they won't be lost.
+    console.error("SMTP boot verification failed — jobs will retry per Bull config:", err.message);
+    sharedTransporter = null;
+}
+
+// Register processors for all known templates
 for (const name of Object.keys(templates)) {
     emailQueue.process(name, processEmailJob);
 }
 
 emailQueue.on("failed", (job, err) => {
-    console.error(`Email job failed [${job.name}]:`, err.message);
+    console.error(`[email] Job failed [${job.name}] → ${job.data?.to}: ${err.message}`);
 });
 
-// ── Due-date reminder cron — runs daily at 9 AM ──────────────────────────────
+emailQueue.on("completed", (job) => {
+    console.log(`[email] Job completed [${job.name}] → ${job.data?.to}`);
+});
+
+// ── Due-date Reminder Cron ────────────────────────────────────────────────────
 cron.schedule("0 9 * * *", async () => {
-    console.log("[cron] Running due-date reminder job...");
+    console.log("[cron] Running due-date reminder job…");
     try {
         const now = new Date();
         const startOfTomorrow = new Date(now);
@@ -514,10 +526,27 @@ cron.schedule("0 9 * * *", async () => {
                 queued++;
             }
         }
-        console.log(`[cron] Due-date reminders queued: ${queued}`);
+        console.log(`[cron] Queued ${queued} due-date reminder(s).`);
     } catch (err) {
         console.error("[cron] Due-date reminder error:", err.message);
     }
 });
 
-console.log("Email worker running (with daily due-date cron at 9 AM)...");
+// ── Graceful Shutdown ─────────────────────────────────────────────────────────
+// Render sends SIGTERM before killing the process. This gives in-flight jobs
+// time to finish rather than being dropped mid-send.
+async function gracefulShutdown(signal) {
+    console.log(`[shutdown] ${signal} received — draining email queue…`);
+    try {
+        await emailQueue.close();
+        console.log("[shutdown] Queue drained. Exiting cleanly.");
+    } catch (err) {
+        console.error("[shutdown] Error during drain:", err.message);
+    }
+    process.exit(0);
+}
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+
+console.log("Email worker ready. Listening for jobs (cron: due-date reminders at 9 AM daily).");

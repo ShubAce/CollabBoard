@@ -1,7 +1,6 @@
 import "dotenv/config";
 import mongoose from "mongoose";
 import cron from "node-cron";
-import nodemailer from "nodemailer";
 import emailQueue from "../emailQueue.js";
 import Task from "../../models/Task.js";
 
@@ -9,52 +8,54 @@ import Task from "../../models/Task.js";
 await mongoose.connect(process.env.MONGO_URI);
 console.log("MongoDB connected.");
 
+if (!process.env.BREVO_API_KEY) {
+    console.error("FATAL: BREVO_API_KEY is not set.");
+    process.exit(1);
+}
+
 function sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));
 }
 
-// ── SMTP Transporter ──────────────────────────────────────────────────────────
-const transporter = nodemailer.createTransport({
-    host:   "smtp.gmail.com",
-    port:   465,
-    secure: true,
-    family: 4,                       // Force IPv4 — Render does not support IPv6
-    auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-    },
-});
+const FROM_NAME  = "CollabBoard";
+const FROM_EMAIL = process.env.SMTP_USER; // no.reply.collabboard@gmail.com
+console.log(`[brevo] Sending from: ${FROM_NAME} <${FROM_EMAIL}>`);
 
-// Verify SMTP connection on startup
-try {
-    await transporter.verify();
-    console.log("[smtp] Transporter verified — ready to send.");
-} catch (err) {
-    console.error("[smtp] FATAL: Transporter verification failed:", err.message);
-    process.exit(1);
-}
+// ── Brevo HTTP Send Function ──────────────────────────────────────────────────
+// Uses Brevo's REST API over HTTPS — no SMTP ports needed, works on Render
+async function sendMail({ to, subject, html, text }, maxAttempts = 3) {
+    const toArray = Array.isArray(to) ? to : [to];
 
-const FROM_ADDRESS = (process.env.EMAIL_FROM || "").trim().replace(/^["']|["']$/g, "") || `CollabBoard <${process.env.SMTP_USER}>`;
-console.log(`[smtp] Sending from: ${FROM_ADDRESS}`);
-
-// ── SMTP Send Function ────────────────────────────────────────────────────────
-async function sendMail(mailOptions, maxAttempts = 3) {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
-            const info = await transporter.sendMail({
-                from:    FROM_ADDRESS,
-                to:      mailOptions.to,
-                subject: mailOptions.subject,
-                html:    mailOptions.html,
-                text:    mailOptions.text,
+            const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "api-key": process.env.BREVO_API_KEY,
+                },
+                body: JSON.stringify({
+                    sender:      { name: FROM_NAME, email: FROM_EMAIL },
+                    to:          toArray.map((email) => ({ email })),
+                    subject,
+                    htmlContent: html,
+                    textContent: text,
+                }),
             });
-            console.log(`[smtp] Delivered: ${info.messageId}`);
-            return info;
+
+            if (!response.ok) {
+                const err = await response.text();
+                throw new Error(`Brevo ${response.status}: ${err}`);
+            }
+
+            const result = await response.json();
+            console.log(`[brevo] Delivered: ${result.messageId}`);
+            return result;
         } catch (err) {
-            console.error(`[smtp] Attempt ${attempt}/${maxAttempts} failed: ${err.message}`);
+            console.error(`[brevo] Attempt ${attempt}/${maxAttempts} failed: ${err.message}`);
             if (attempt < maxAttempts) {
-                const delay = 1000 * attempt; // 1s, 2s
-                console.log(`[smtp] Retrying in ${delay / 1000}s…`);
+                const delay = 1000 * attempt;
+                console.log(`[brevo] Retrying in ${delay / 1000}s…`);
                 await sleep(delay);
             } else {
                 throw err;
@@ -402,7 +403,6 @@ cron.schedule("0 9 * * *", async () => {
 async function gracefulShutdown(signal) {
     console.log(`[shutdown] ${signal} received — draining email queue…`);
     try { await emailQueue.close(); } catch (_) {}
-    transporter.close();
     process.exit(0);
 }
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));

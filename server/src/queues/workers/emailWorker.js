@@ -1,8 +1,18 @@
 import "dotenv/config";
 import dns from "node:dns";
+// 1. Force IPv4 priority for Node
 dns.setDefaultResultOrder("ipv4first");
 
+// 2. Set public DNS servers to bypass Render's broken/slow DNS resolver
+try {
+    dns.setServers(["8.8.8.8", "8.8.4.4"]);
+    console.log("Process DNS servers set to Google Public DNS.");
+} catch (err) {
+    console.warn("Could not set process DNS servers:", err.message);
+}
+
 import dnsPromises from "node:dns/promises";
+import net from "node:net";
 import mongoose from "mongoose";
 import cron from "node-cron";
 import nodemailer from "nodemailer";
@@ -12,31 +22,108 @@ import Task from "../../models/Task.js";
 // Workers run as standalone processes — need their own DB connection
 await mongoose.connect(process.env.MONGO_URI);
 
+// Helper to quickly test TCP connectivity
+function testTcpConnection(host, port, timeout = 2500) {
+    return new Promise((resolve) => {
+        const socket = new net.Socket();
+        socket.setTimeout(timeout);
+        
+        socket.connect(port, host, () => {
+            socket.destroy();
+            resolve(true);
+        });
+        
+        const onError = () => {
+            socket.destroy();
+            resolve(false);
+        };
+        
+        socket.on("error", onError);
+        socket.on("timeout", onError);
+    });
+}
+
 let smtpHost = process.env.SMTP_HOST;
-let tlsOptions = {};
+let smtpPort = parseInt(process.env.SMTP_PORT || "587");
+let isSecure = smtpPort === 465;
+let tlsOptions = { servername: process.env.SMTP_HOST };
 
 try {
+    // Resolve all IPv4 addresses for the SMTP host
     const addresses = await dnsPromises.resolve4(smtpHost);
+    console.log(`Resolved SMTP host ${smtpHost} to IPs:`, addresses);
+
     if (addresses && addresses.length > 0) {
-        console.log(`Resolved SMTP host ${smtpHost} to IPv4: ${addresses[0]}`);
-        smtpHost = addresses[0];
-        tlsOptions = {
-            servername: process.env.SMTP_HOST
-        };
+        let workingIp = null;
+        let workingPort = smtpPort;
+        let workingSecure = isSecure;
+
+        // 1. Try configured port across all resolved IPs
+        for (const ip of addresses) {
+            console.log(`Testing TCP connection to ${ip}:${smtpPort}...`);
+            const isReachable = await testTcpConnection(ip, smtpPort, 2000);
+            if (isReachable) {
+                workingIp = ip;
+                console.log(`Found working SMTP server at ${ip}:${smtpPort}`);
+                break;
+            }
+        }
+
+        // 2. Fallback: If configured port (e.g. 587) failed, try 465 (Secure SSL/TLS)
+        if (!workingIp && smtpPort !== 465) {
+            console.warn(`All connection attempts to port ${smtpPort} timed out. Trying fallback port 465 (Secure SSL/TLS)...`);
+            for (const ip of addresses) {
+                const isReachable = await testTcpConnection(ip, 465, 2000);
+                if (isReachable) {
+                    workingIp = ip;
+                    workingPort = 465;
+                    workingSecure = true;
+                    console.log(`SMTP self-healed: Found working fallback SMTP server at ${ip}:465 (Secure SSL/TLS)`);
+                    break;
+                }
+            }
+        }
+
+        // 3. Fallback: If both failed, try 587 if configured port was 465
+        if (!workingIp && smtpPort === 465) {
+            console.warn(`All connection attempts to port 465 timed out. Trying fallback port 587 (STARTTLS)...`);
+            for (const ip of addresses) {
+                const isReachable = await testTcpConnection(ip, 587, 2000);
+                if (isReachable) {
+                    workingIp = ip;
+                    workingPort = 587;
+                    workingSecure = false;
+                    console.log(`SMTP self-healed: Found working fallback SMTP server at ${ip}:587 (STARTTLS)`);
+                    break;
+                }
+            }
+        }
+
+        if (workingIp) {
+            smtpHost = workingIp;
+            smtpPort = workingPort;
+            isSecure = workingSecure;
+            tlsOptions = {
+                servername: process.env.SMTP_HOST
+            };
+        } else {
+            console.error("Warning: All SMTP servers and port combinations failed TCP reachability tests. Proceeding with default configuration.");
+        }
     }
 } catch (err) {
     console.error(`Failed to resolve SMTP host ${smtpHost} to IPv4:`, err.message);
 }
 
 const transporter = nodemailer.createTransport({
-    pool: true,
-    maxConnections: 3,
-    maxMessages: 50,
+    pool: false, // Turn off pooling to avoid silently dropped connections causing timeouts
     host: smtpHost,
-    port: process.env.SMTP_PORT,
-    secure: process.env.SMTP_PORT === "465" || process.env.SMTP_PORT == 465,
-	auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-	tls: tlsOptions
+    port: smtpPort,
+    secure: isSecure,
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    tls: tlsOptions,
+    connectionTimeout: 5000, // Fail fast (5 seconds) so Bull queue can retry quickly
+    greetingTimeout: 5000,
+    socketTimeout: 5000
 });
 
 transporter.verify()

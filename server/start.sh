@@ -7,4 +7,4 @@ echo "Starting activity worker..."
 node src/queues/workers/activityWorker.js &
 
 echo "Starting web server..."
-node server.js
+exec node server.js

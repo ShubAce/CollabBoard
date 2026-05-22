@@ -18,7 +18,7 @@ export const initSocket = async (httpServer) => {
 
 	// Redis adapter — critical for horizontal scaling
 	// Two separate Redis clients required (pub + sub)
-	const pubClient = createClient({ url: `redis://${process.env.REDIS_HOST}:${process.env.REDIS_PORT}` });
+	const pubClient = createClient({ url: process.env.REDIS_URL || `redis://${process.env.REDIS_HOST}:${process.env.REDIS_PORT}` });
 	const subClient = pubClient.duplicate();
 	await Promise.all([pubClient.connect(), subClient.connect()]);
 	io.adapter(createAdapter(pubClient, subClient));

@@ -1,6 +1,7 @@
 import "dotenv/config";
 import mongoose from "mongoose";
 import cron from "node-cron";
+import nodemailer from "nodemailer";
 import emailQueue from "../emailQueue.js";
 import Task from "../../models/Task.js";
 
@@ -12,93 +13,50 @@ function sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));
 }
 
-// ── Resend Sender Resolution ──────────────────────────────────────────────────
-// Resend requires the `from` address to use a domain you've verified in their
-// dashboard (app.resend.com/domains). On the free plan without a custom domain,
-// the only usable sender is: onboarding@resend.dev
-//
-// YOUR CURRENT EMAIL_FROM uses @gmail.com which Resend will reject with 403.
-//
-// Fix (pick one):
-//   A) Verify your own domain at app.resend.com/domains, then set:
-//        EMAIL_FROM="CollabBoard <you@yourdomain.com>"
-//   B) Leave EMAIL_FROM as-is and set RESEND_FROM_OVERRIDE in Render:
-//        RESEND_FROM_OVERRIDE="CollabBoard <you@yourdomain.com>"
-//   C) For quick testing only — no override needed, falls back to onboarding@resend.dev
-//
-// The function below resolves the right from address automatically.
-function resolveFromAddress() {
-    // Explicit override always wins (set this in Render env vars)
-    if (process.env.RESEND_FROM_OVERRIDE) {
-        return process.env.RESEND_FROM_OVERRIDE.trim();
-    }
+// ── SMTP Transporter ──────────────────────────────────────────────────────────
+const transporter = nodemailer.createTransport({
+    host:   process.env.SMTP_HOST,   // smtp.gmail.com
+    port:   Number(process.env.SMTP_PORT) || 587,
+    secure: false,                   // false = STARTTLS on port 587
+    auth: {
+        user: process.env.SMTP_USER, // no.reply.collabboard@gmail.com
+        pass: process.env.SMTP_PASS, // Gmail app password
+    },
+    tls: {
+        rejectUnauthorized: true,
+    },
+});
 
-    const raw = (process.env.EMAIL_FROM || "").trim();
-
-    // Strip outer quotes that .env files sometimes add: "CollabBoard <x>" → CollabBoard <x>
-    const unquoted = raw.replace(/^["']|["']$/g, "").trim();
-
-    // Extract the email address from "Display Name <email@domain.com>" format
-    const match = unquoted.match(/<([^>]+)>/);
-    const emailAddress = match ? match[1].trim() : unquoted;
-
-    // Resend will reject any @gmail.com, @yahoo.com, etc. as the sender
-    // unless you own and verify that domain. Fall back to their sandbox address.
-    const isFreeProvider = /\@(gmail|yahoo|hotmail|outlook|icloud)\.com$/i.test(emailAddress);
-    if (isFreeProvider || !emailAddress.includes("@")) {
-        console.warn(
-            `[resend] EMAIL_FROM uses "${emailAddress}" which is not a Resend-verified domain.\n` +
-            `         Falling back to onboarding@resend.dev for testing.\n` +
-            `         To send from your own address, verify a domain at app.resend.com/domains\n` +
-            `         and set RESEND_FROM_OVERRIDE="CollabBoard <you@yourdomain.com>" in Render.`
-        );
-        return "CollabBoard <onboarding@resend.dev>";
-    }
-
-    // Use the cleaned unquoted value as-is
-    return unquoted;
+// Verify SMTP connection on startup
+try {
+    await transporter.verify();
+    console.log("[smtp] Transporter verified — ready to send.");
+} catch (err) {
+    console.error("[smtp] FATAL: Transporter verification failed:", err.message);
+    process.exit(1);
 }
 
-const RESEND_FROM = resolveFromAddress();
-console.log(`[resend] Sending from: ${RESEND_FROM}`);
+const FROM_ADDRESS = (process.env.EMAIL_FROM || "").trim().replace(/^["']|["']$/g, "") || `CollabBoard <${process.env.SMTP_USER}>`;
+console.log(`[smtp] Sending from: ${FROM_ADDRESS}`);
 
-// ── Resend Send Function ──────────────────────────────────────────────────────
-async function sendMailWithResend(mailOptions, maxAttempts = 3) {
-    if (!process.env.RESEND_API_KEY) {
-        throw new Error("RESEND_API_KEY is not set in environment variables.");
-    }
-
-    const { to, subject, html, text } = mailOptions;
-    const toArray = Array.isArray(to) ? to : [to];
-
+// ── SMTP Send Function ────────────────────────────────────────────────────────
+async function sendMail(mailOptions, maxAttempts = 3) {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
-            const response = await fetch("https://api.resend.com/emails", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${process.env.RESEND_API_KEY}`,
-                },
-                body: JSON.stringify({
-                    from: RESEND_FROM,
-                    to: toArray,
-                    subject,
-                    html,
-                    text,
-                }),
+            const info = await transporter.sendMail({
+                from:    FROM_ADDRESS,
+                to:      mailOptions.to,
+                subject: mailOptions.subject,
+                html:    mailOptions.html,
+                text:    mailOptions.text,
             });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`Resend API ${response.status}: ${errorText}`);
-            }
-
-            return await response.json();
+            console.log(`[smtp] Delivered: ${info.messageId}`);
+            return info;
         } catch (err) {
-            console.error(`[resend] Attempt ${attempt}/${maxAttempts} failed: ${err.message}`);
+            console.error(`[smtp] Attempt ${attempt}/${maxAttempts} failed: ${err.message}`);
             if (attempt < maxAttempts) {
                 const delay = 1000 * attempt; // 1s, 2s
-                console.log(`[resend] Retrying in ${delay / 1000}s…`);
+                console.log(`[smtp] Retrying in ${delay / 1000}s…`);
                 await sleep(delay);
             } else {
                 throw err;
@@ -109,15 +67,15 @@ async function sendMailWithResend(mailOptions, maxAttempts = 3) {
 
 // ── Brand & Templates ─────────────────────────────────────────────────────────
 const BRAND = {
-    name: "CollabBoard",
-    accent: "#4F46E5",
-    bg: "#F3F4F6",
-    card: "#FFFFFF",
-    textMain: "#111827",
+    name:          "CollabBoard",
+    accent:        "#4F46E5",
+    bg:            "#F3F4F6",
+    card:          "#FFFFFF",
+    textMain:      "#111827",
     textSecondary: "#4B5563",
-    muted: "#9CA3AF",
-    border: "#E5E7EB",
-    plate: "#F9FAFB",
+    muted:         "#9CA3AF",
+    border:        "#E5E7EB",
+    plate:         "#F9FAFB",
 };
 
 const BRAND_LOGO = `
@@ -125,8 +83,7 @@ const BRAND_LOGO = `
     <rect x="3" y="3" width="18" height="18" rx="6" fill="${BRAND.accent}" />
     <path d="M7 12H17" stroke="white" stroke-width="2" stroke-linecap="round"/>
     <path d="M12 7V17" stroke="white" stroke-width="2" stroke-linecap="round"/>
-</svg>
-`;
+</svg>`;
 
 const escapeHtml = (value) =>
     String(value ?? "")
@@ -299,92 +256,92 @@ const renderEmail = ({
 const templates = {
     send_workspace_invite: (data) =>
         renderEmail({
-            subject: `You have a workspace invite`,
-            preheader: `${data.inviterName || "Someone"} invited you to ${data.workspaceName || "a workspace"}`,
-            greeting: `Hi ${data.userName || "there"},`,
-            message: `${escapeHtml(data.inviterName || "Someone")} invited you to join <strong>${escapeHtml(data.workspaceName || "a workspace")}</strong> as a <strong>${escapeHtml(data.role || "member")}</strong>.`,
-            ctaLabel: "Review invite",
-            ctaUrl: data.inviteUrl,
+            subject:    `You have a workspace invite`,
+            preheader:  `${data.inviterName || "Someone"} invited you to ${data.workspaceName || "a workspace"}`,
+            greeting:   `Hi ${data.userName || "there"},`,
+            message:    `${escapeHtml(data.inviterName || "Someone")} invited you to join <strong>${escapeHtml(data.workspaceName || "a workspace")}</strong> as a <strong>${escapeHtml(data.role || "member")}</strong>.`,
+            ctaLabel:   "Review invite",
+            ctaUrl:     data.inviteUrl,
             details: [
-                { label: "Workspace", value: data.workspaceName },
-                { label: "Role",      value: data.role },
-                { label: "Invited by",value: data.inviterName },
+                { label: "Workspace",  value: data.workspaceName },
+                { label: "Role",       value: data.role },
+                { label: "Invited by", value: data.inviterName },
             ],
             footerNote: "If you were not expecting this invite, you can safely ignore this email.",
             themeColor: THEMES.invite,
-            iconSvg: ICONS.userPlus,
+            iconSvg:    ICONS.userPlus,
         }),
 
     send_task_assigned: (data) =>
         renderEmail({
-            subject: `Task assigned: ${data.taskTitle || "New task"}`,
+            subject:   `Task assigned: ${data.taskTitle || "New task"}`,
             preheader: `You were assigned ${data.taskTitle || "a task"}`,
-            greeting: `Hi ${data.userName || "there"},`,
-            message: `You have been assigned <strong>${escapeHtml(data.taskTitle || "a task")}</strong>${data.boardName ? ` in <strong>${escapeHtml(data.boardName)}</strong>` : ""}.`,
-            ctaLabel: data.taskUrl ? "View task" : null,
-            ctaUrl: data.taskUrl,
+            greeting:  `Hi ${data.userName || "there"},`,
+            message:   `You have been assigned <strong>${escapeHtml(data.taskTitle || "a task")}</strong>${data.boardName ? ` in <strong>${escapeHtml(data.boardName)}</strong>` : ""}.`,
+            ctaLabel:  data.taskUrl ? "View task" : null,
+            ctaUrl:    data.taskUrl,
             details: [
                 { label: "Board", value: data.boardName },
                 { label: "Task",  value: data.taskTitle },
             ],
             footerNote: "Open CollabBoard to view updates and collaborate with your team.",
             themeColor: THEMES.task,
-            iconSvg: ICONS.clipboardCheck,
+            iconSvg:    ICONS.clipboardCheck,
         }),
 
     send_comment_mention: (data) =>
         renderEmail({
-            subject: `${data.authorName || "Someone"} mentioned you`,
+            subject:   `${data.authorName || "Someone"} mentioned you`,
             preheader: `New mention on ${data.taskTitle || "a task"}`,
-            greeting: `Hi ${data.userName || "there"},`,
-            message: `<strong>${escapeHtml(data.authorName || "Someone")}</strong> mentioned you in a comment on <strong>${escapeHtml(data.taskTitle || "a task")}</strong>.`,
-            ctaLabel: data.taskUrl ? "View comment" : null,
-            ctaUrl: data.taskUrl,
-            details: [{ label: "Task", value: data.taskTitle }],
+            greeting:  `Hi ${data.userName || "there"},`,
+            message:   `<strong>${escapeHtml(data.authorName || "Someone")}</strong> mentioned you in a comment on <strong>${escapeHtml(data.taskTitle || "a task")}</strong>.`,
+            ctaLabel:  data.taskUrl ? "View comment" : null,
+            ctaUrl:    data.taskUrl,
+            details:   [{ label: "Task", value: data.taskTitle }],
             footerNote: "Reply in CollabBoard to keep the conversation going.",
             themeColor: THEMES.comment,
-            iconSvg: ICONS.messageCircle,
+            iconSvg:    ICONS.messageCircle,
         }),
 
     send_chat_mention: (data) =>
         renderEmail({
-            subject: `${data.authorName || "Someone"} mentioned you in chat`,
+            subject:   `${data.authorName || "Someone"} mentioned you in chat`,
             preheader: `New mention in ${data.workspaceName || "workspace"} chat`,
-            greeting: `Hi ${data.userName || "there"},`,
-            message: `<strong>${escapeHtml(data.authorName || "Someone")}</strong> mentioned you in the <strong>${escapeHtml(data.workspaceName || "workspace")}</strong> chat.`,
-            ctaLabel: data.chatUrl ? "Open chat" : null,
-            ctaUrl: data.chatUrl,
-            details: [{ label: "Workspace", value: data.workspaceName }],
+            greeting:  `Hi ${data.userName || "there"},`,
+            message:   `<strong>${escapeHtml(data.authorName || "Someone")}</strong> mentioned you in the <strong>${escapeHtml(data.workspaceName || "workspace")}</strong> chat.`,
+            ctaLabel:  data.chatUrl ? "Open chat" : null,
+            ctaUrl:    data.chatUrl,
+            details:   [{ label: "Workspace", value: data.workspaceName }],
             footerNote: "Jump in to keep the conversation moving.",
             themeColor: THEMES.chat,
-            iconSvg: ICONS.hash,
+            iconSvg:    ICONS.hash,
         }),
 
     send_password_reset: (data) =>
         renderEmail({
-            subject: "Reset your CollabBoard password",
+            subject:   "Reset your CollabBoard password",
             preheader: "Reset your password in a few clicks",
-            greeting: "Hi there,",
-            message: "We received a request to reset your password. Use the button below to continue and set up a new password for your account.",
-            ctaLabel: "Reset password",
-            ctaUrl: data.resetUrl,
+            greeting:  "Hi there,",
+            message:   "We received a request to reset your password. Use the button below to continue and set up a new password for your account.",
+            ctaLabel:  "Reset password",
+            ctaUrl:    data.resetUrl,
             footerNote: "If you did not request this change, you can safely ignore this email. Your password will remain unchanged.",
             themeColor: THEMES.password,
-            iconSvg: ICONS.key,
+            iconSvg:    ICONS.key,
         }),
 
     send_task_due_reminder: (data) =>
         renderEmail({
-            subject: `Task due tomorrow: ${data.taskTitle || "Upcoming task"}`,
+            subject:   `Task due tomorrow: ${data.taskTitle || "Upcoming task"}`,
             preheader: `${data.taskTitle || "A task"} is due tomorrow`,
-            greeting: `Hi ${data.userName || "there"},`,
-            message: `This is a quick reminder that <strong>${escapeHtml(data.taskTitle || "a task")}</strong> is due tomorrow.`,
-            ctaLabel: data.taskUrl ? "Open task" : null,
-            ctaUrl: data.taskUrl,
-            details: [{ label: "Task", value: data.taskTitle }],
+            greeting:  `Hi ${data.userName || "there"},`,
+            message:   `This is a quick reminder that <strong>${escapeHtml(data.taskTitle || "a task")}</strong> is due tomorrow.`,
+            ctaLabel:  data.taskUrl ? "Open task" : null,
+            ctaUrl:    data.taskUrl,
+            details:   [{ label: "Task", value: data.taskTitle }],
             footerNote: "Update the task status to keep your team in sync.",
             themeColor: THEMES.alert,
-            iconSvg: ICONS.clock,
+            iconSvg:    ICONS.clock,
         }),
 };
 
@@ -395,19 +352,11 @@ const processEmailJob = async (job) => {
     if (!template) throw new Error(`Unknown email job: ${name}`);
 
     const { subject, html, text } = template(data);
-
-    const recipient = process.env.EMAIL_REDIRECT_ALL || data.to;
-    await sendMailWithResend({ from: RESEND_FROM, to: recipient, subject, html, text });
-    console.log(`[email] Sent [${name}] → ${recipient}${recipient !== data.to ? ` (redirected from ${data.to})` : ""}`);
-   
+    await sendMail({ to: data.to, subject, html, text });
+    console.log(`[email] Sent [${name}] → ${data.to}`);
 };
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
-if (!process.env.RESEND_API_KEY) {
-    console.error("FATAL: RESEND_API_KEY is not set. Email worker cannot send emails.");
-    process.exit(1);
-}
-
 console.log("Starting email job processors…");
 for (const name of Object.keys(templates)) {
     emailQueue.process(name, processEmailJob);
@@ -455,6 +404,7 @@ cron.schedule("0 9 * * *", async () => {
 async function gracefulShutdown(signal) {
     console.log(`[shutdown] ${signal} received — draining email queue…`);
     try { await emailQueue.close(); } catch (_) {}
+    transporter.close();
     process.exit(0);
 }
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));

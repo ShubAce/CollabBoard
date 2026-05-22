@@ -74,6 +74,7 @@ export default function AppShell() {
 	const [channels, setChannels] = useState([]);
 	const [fallbackWorkspaceId, setFallbackWorkspaceId] = useState(null);
 	const [sidebarOpen, setSidebarOpen] = useState(false);
+	const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 	const [userMenuOpen, setUserMenuOpen] = useState(false);
 	const [switcherOpen, setSwitcherOpen] = useState(false);
 	const [statusMenuOpen, setStatusMenuOpen] = useState(false);
@@ -227,13 +228,7 @@ export default function AppShell() {
 
 	useEffect(() => {
 		const handleKey = (event) => {
-			const key = event.key?.toLowerCase();
-			if ((event.ctrlKey || event.metaKey) && key === "k") {
-				event.preventDefault();
-				setCommandOpen(true);
-				return;
-			}
-			if (key === "escape") {
+			if (event.key === "Escape") {
 				setCommandOpen(false);
 				setBellOpen(false);
 				setUserMenuOpen(false);
@@ -377,7 +372,7 @@ export default function AppShell() {
 				/>
 			)}
 			<aside
-				className="sidebar"
+				className={`sidebar${sidebarCollapsed ? " collapsed" : ""}`}
 				style={{ display: showSidebar ? "flex" : "none" }}
 			>
 				<div
@@ -388,6 +383,7 @@ export default function AppShell() {
 						type="button"
 						className="workspace-switcher"
 						onClick={() => setSwitcherOpen((open) => !open)}
+						style={{ flex: 1, minWidth: 0, paddingRight: 4 }}
 					>
 						<span
 							style={{
@@ -398,11 +394,21 @@ export default function AppShell() {
 								flexShrink: 0,
 							}}
 						/>
-						<span style={{ flex: 1, textAlign: "left", fontWeight: 600 }}>{workspace?.name || "Select workspace"}</span>
+						<span style={{ flex: 1, textAlign: "left", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{workspace?.name || "Select workspace"}</span>
 						<Icon
 							name="chevronDown"
 							size={14}
 						/>
+					</button>
+
+					<button
+						type="button"
+						className="btn btn-ghost btn-sm"
+						style={{ padding: 4, height: "auto", color: "var(--text-muted)" }}
+						onClick={() => setSidebarCollapsed(c => !c)}
+						title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+					>
+						<Icon name={sidebarCollapsed ? "menu" : "sidebar"} size={16} />
 					</button>
 
 					{switcherOpen && (
@@ -576,7 +582,7 @@ export default function AppShell() {
 											name="board"
 											size={14}
 										/>
-										No boards yet
+										<span>No boards yet</span>
 									</button>
 								)}
 								{boards.map((board) => (
@@ -622,6 +628,7 @@ export default function AppShell() {
 									const activeChannelParam = searchParams.get("channel");
 									
 									const isGeneral = channel.key === "general" || channel.label === "general";
+									const isAnnouncements = channel.key === "announcements" || channel.label === "announcements";
 									
 									let isActive = false;
 									if (activeChannelId) {
@@ -638,7 +645,13 @@ export default function AppShell() {
 											to={channel.to}
 											className={`sidebar-link${isActive ? " active" : ""}`}
 										>
-											<span style={{ color: "var(--text-muted)" }}>#</span>
+											{isAnnouncements ? (
+												<Icon name="bell" size={14} style={{ color: "var(--text-muted)" }} />
+											) : isGeneral ? (
+												<Icon name="chat" size={14} style={{ color: "var(--text-muted)" }} />
+											) : (
+												<span style={{ color: "var(--text-muted)" }}>#</span>
+											)}
 											<span style={{ flex: 1 }}>{channel.label}</span>
 											{channel.isReadOnly && <span className="badge badge-muted">Read-only</span>}
 										</Link>
@@ -678,7 +691,7 @@ export default function AppShell() {
 											name="user"
 											size={14}
 										/>
-										No direct messages
+										<span>No direct messages</span>
 									</button>
 								)}
 								{dmItems.map((member) => {
@@ -875,7 +888,6 @@ export default function AppShell() {
 							size={14}
 						/>
 						<span style={{ flex: 1, textAlign: "left" }}>Search</span>
-						<span className="command-kbd">Ctrl+K</span>
 					</button>
 
 					<div
@@ -989,7 +1001,6 @@ export default function AppShell() {
 								>
 									<Icon name="keyboard" size={14} />
 									<span style={{ flex: 1 }}>Keyboard shortcuts</span>
-									<span className="command-kbd" style={{ fontSize: 10 }}>Ctrl+/</span>
 								</button>
 								<div style={{ height: 1, background: "var(--border-subtle)", margin: "4px 0" }} />
 								<button type="button" className="dropdown-item" onClick={() => setUserMenuOpen(false)}>
@@ -1039,66 +1050,161 @@ export default function AppShell() {
 				</nav>
 			</div>
 
-			{commandOpen && (
-				<div
-					className="command-overlay"
-					onClick={(event) => {
-						if (event.target === event.currentTarget) setCommandOpen(false);
-					}}
-				>
-					<div className="command-palette">
-						<div className="command-input">
-							<Icon
-								name="search"
-								size={16}
-							/>
-							<input
-								ref={commandInputRef}
-								value={commandQuery}
-								onChange={(event) => setCommandQuery(event.target.value)}
-								placeholder="Search or run a command"
-							/>
-							<span className="command-kbd">Esc</span>
-						</div>
-						<div className="command-section">
-							<div className="command-section-title">Quick actions</div>
-							<button
-								type="button"
-								className="command-item"
-								onClick={() => {
-									setCommandOpen(false);
-									if (activeWorkspaceId) navigate(`/app/workspaces/${activeWorkspaceId}/boards`);
-								}}
-							>
-								<span>Create new board</span>
-								<span className="command-kbd">B</span>
-							</button>
-							<button
-								type="button"
-								className="command-item"
-								onClick={() => {
-									setCommandOpen(false);
-									navigate("/app/notifications");
-								}}
-							>
-								<span>Open notifications</span>
-								<span className="command-kbd">N</span>
-							</button>
-							<button
-								type="button"
-								className="command-item"
-								onClick={() => {
-									setCommandOpen(false);
-									navigate("/app/profile");
-								}}
-							>
-								<span>Open profile</span>
-								<span className="command-kbd">P</span>
-							</button>
+			{commandOpen && (() => {
+				const query = commandQuery.toLowerCase();
+				const filteredWorkspaces = query ? workspaces.filter(w => w.name.toLowerCase().includes(query)) : [];
+				const filteredBoards = query ? boards.filter(b => b.name.toLowerCase().includes(query)) : [];
+				const filteredChannels = query ? channels.filter(c => c.name?.toLowerCase().includes(query) && !c.name?.startsWith("dm_")) : [];
+				const filteredDMs = query ? dmItems.filter(m => m.name.toLowerCase().includes(query)) : [];
+				const hasResults = filteredWorkspaces.length > 0 || filteredBoards.length > 0 || filteredChannels.length > 0 || filteredDMs.length > 0;
+
+				return (
+					<div
+						className="command-overlay"
+						onClick={(event) => {
+							if (event.target === event.currentTarget) setCommandOpen(false);
+						}}
+					>
+						<div className="command-palette">
+							<div className="command-input">
+								<Icon
+									name="search"
+									size={16}
+								/>
+								<input
+									ref={commandInputRef}
+									value={commandQuery}
+									onChange={(event) => setCommandQuery(event.target.value)}
+									placeholder="Search workspaces, boards, channels..."
+								/>
+							</div>
+							<div className="command-section">
+								{commandQuery ? (
+									hasResults ? (
+										<>
+											{filteredWorkspaces.length > 0 && (
+												<>
+													<div className="command-section-title">Workspaces</div>
+													{filteredWorkspaces.map(ws => (
+														<button
+															key={ws._id}
+															type="button"
+															className="command-item"
+															onClick={() => {
+																setCommandOpen(false);
+																navigate(`/app/workspaces/${ws._id}`);
+															}}
+														>
+															<Icon name="briefcase" size={14} />
+															<span>{ws.name}</span>
+														</button>
+													))}
+												</>
+											)}
+											{filteredBoards.length > 0 && (
+												<>
+													<div className="command-section-title">Boards</div>
+													{filteredBoards.map(board => (
+														<button
+															key={board._id}
+															type="button"
+															className="command-item"
+															onClick={() => {
+																setCommandOpen(false);
+																navigate(`/app/workspaces/${activeWorkspaceId}/boards/${board._id}`);
+															}}
+														>
+															<Icon name="board" size={14} />
+															<span>{board.name}</span>
+														</button>
+													))}
+												</>
+											)}
+											{filteredChannels.length > 0 && (
+												<>
+													<div className="command-section-title">Channels</div>
+													{filteredChannels.map(ch => (
+														<button
+															key={ch._id}
+															type="button"
+															className="command-item"
+															onClick={() => {
+																setCommandOpen(false);
+																navigate(`/app/workspaces/${activeWorkspaceId}/chat?channelId=${ch._id}`);
+															}}
+														>
+															<span style={{ color: "var(--text-muted)", fontSize: 16 }}>#</span>
+															<span>{ch.name}</span>
+														</button>
+													))}
+												</>
+											)}
+											{filteredDMs.length > 0 && (
+												<>
+													<div className="command-section-title">Direct Messages</div>
+													{filteredDMs.map(member => (
+														<button
+															key={member._id}
+															type="button"
+															className="command-item"
+															onClick={() => {
+																setCommandOpen(false);
+																navigate(`/app/workspaces/${activeWorkspaceId}/chat?dm=${member._id}`);
+															}}
+														>
+															<Icon name="user" size={14} />
+															<span>{member.name}</span>
+														</button>
+													))}
+												</>
+											)}
+										</>
+									) : (
+										<div style={{ padding: "12px 16px", color: "var(--text-secondary)", fontSize: 13 }}>No results found for "{commandQuery}"</div>
+									)
+								) : (
+									<>
+										<div className="command-section-title">Quick actions</div>
+										<button
+											type="button"
+											className="command-item"
+											onClick={() => {
+												setCommandOpen(false);
+												if (activeWorkspaceId) navigate(`/app/workspaces/${activeWorkspaceId}/boards`);
+											}}
+										>
+											<Icon name="plus" size={14} />
+											<span>Create new board</span>
+										</button>
+										<button
+											type="button"
+											className="command-item"
+											onClick={() => {
+												setCommandOpen(false);
+												navigate("/app/notifications");
+											}}
+										>
+											<Icon name="bell" size={14} />
+											<span>Open notifications</span>
+										</button>
+										<button
+											type="button"
+											className="command-item"
+											onClick={() => {
+												setCommandOpen(false);
+												navigate("/app/profile");
+											}}
+										>
+											<Icon name="user" size={14} />
+											<span>Open profile</span>
+										</button>
+									</>
+								)}
+							</div>
 						</div>
 					</div>
-				</div>
-			)}
+				);
+			})()}
 		</div>
 	);
 }

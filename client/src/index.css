@@ -614,6 +614,43 @@
 	flex-direction: column;
 	overflow: hidden;
 	z-index: 20;
+	transition: width var(--duration-default) var(--ease-out);
+}
+
+.sidebar.collapsed {
+	width: 64px;
+}
+
+.sidebar.collapsed .workspace-switcher > span:not(:first-child),
+.sidebar.collapsed .workspace-switcher > svg,
+.sidebar.collapsed .sidebar-link > span:not(:first-child),
+.sidebar.collapsed .section-toggle,
+.sidebar.collapsed .sidebar-section-actions,
+.sidebar.collapsed .status-chip > span:not(:first-child),
+.sidebar.collapsed .status-chip > svg {
+	display: none !important;
+}
+
+.sidebar.collapsed .workspace-switcher {
+	justify-content: center;
+	padding: 6px 0;
+}
+
+.sidebar.collapsed .sidebar-link {
+	justify-content: center;
+	padding: 10px 0;
+}
+
+.sidebar.collapsed .sidebar-section-header {
+	justify-content: center;
+	padding: 6px 0;
+}
+
+.sidebar.collapsed .status-chip {
+	justify-content: center;
+	padding: 4px;
+	border: none;
+	background: transparent;
 }
 
 .sidebar-switcher {
@@ -623,6 +660,15 @@
 	padding: 0 12px;
 	border-bottom: 1px solid var(--border-subtle);
 	position: relative;
+	gap: 4px;
+}
+
+.sidebar.collapsed .sidebar-switcher {
+	flex-direction: column;
+	justify-content: center;
+	height: auto;
+	padding: 8px 0;
+	gap: 8px;
 }
 
 .workspace-switcher {

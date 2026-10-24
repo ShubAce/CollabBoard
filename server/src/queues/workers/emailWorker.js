@@ -23,10 +23,14 @@ console.log(`[brevo] Sending from: ${FROM_NAME} <${FROM_EMAIL}>`);
 
 // The API server reads this key to tell inviters when email delivery is broken
 // (see sendInvite) instead of claiming "Invitation sent".
+// The status expires so a stopped worker can't leave a stale "unavailable" behind;
+// while running, the worker re-checks every few minutes (see below).
 const EMAIL_STATUS_KEY = "email:status";
+const EMAIL_STATUS_TTL_SECONDS = 15 * 60;
+const RECHECK_INTERVAL_MS = 5 * 60 * 1000;
 async function recordEmailStatus(ok, reason = null) {
     try {
-        await redis.set(EMAIL_STATUS_KEY, JSON.stringify({ ok, reason, checkedAt: new Date().toISOString() }));
+        await redis.set(EMAIL_STATUS_KEY, JSON.stringify({ ok, reason, checkedAt: new Date().toISOString() }), "EX", EMAIL_STATUS_TTL_SECONDS);
     } catch (err) {
         console.error(`[brevo] Could not record email status: ${err.message}`);
     }
@@ -37,26 +41,41 @@ async function recordEmailStatus(ok, reason = null) {
 class PermanentEmailError extends Error {}
 const isPermanentStatus = (status) => status >= 400 && status < 500 && status !== 429;
 
+// Brevo answers 401 both for a bad key and for its "Authorised IPs" block; tell them apart.
+const describeBrevoAuthError = (status, body) =>
+    /unrecognised IP address/i.test(body)
+        ? `Brevo blocked this server's IP address (Authorised IPs). Deactivate IP blocking or add the IP at https://app.brevo.com/security/authorised_ips`
+        : `Brevo rejected the API key (${status}). Create a new key in Brevo → Settings → SMTP & API → API keys and update BREVO_API_KEY`;
+
 // Fail loudly at boot instead of on the first email someone is waiting for.
+let lastVerifiedOk = null;
 async function verifyBrevoKey() {
     try {
         const res = await fetch("https://api.brevo.com/v3/account", {
             headers: { "api-key": process.env.BREVO_API_KEY, accept: "application/json" },
         });
         if (res.ok) {
-            console.log("[brevo] API key verified.");
+            if (lastVerifiedOk !== true) console.log("[brevo] API key verified — email delivery is available.");
+            lastVerifiedOk = true;
             await recordEmailStatus(true);
             return;
         }
         const body = await res.text();
-        console.error(`[brevo] ✖ API key rejected (${res.status}): ${body}`);
-        console.error("[brevo]   Emails WILL NOT be sent. Create a new key in Brevo → Settings → SMTP & API → API keys, then update BREVO_API_KEY.");
-        await recordEmailStatus(false, `Brevo rejected the API key (${res.status})`);
+        const reason = describeBrevoAuthError(res.status, body);
+        // Log loudly once, then quietly keep re-checking until it's fixed.
+        if (lastVerifiedOk !== false) {
+            console.error(`[brevo] ✖ Emails WILL NOT be sent: ${reason}`);
+            console.error(`[brevo]   Brevo said (${res.status}): ${body}`);
+        }
+        lastVerifiedOk = false;
+        await recordEmailStatus(false, reason);
     } catch (err) {
         console.error(`[brevo] Could not reach Brevo to verify the API key: ${err.message}`);
     }
 }
 await verifyBrevoKey();
+// Fixing the key or Brevo's IP settings recovers on its own — no restart needed.
+setInterval(verifyBrevoKey, RECHECK_INTERVAL_MS).unref();
 
 // ── Brevo HTTP Send Function ──────────────────────────────────────────────────
 // Uses Brevo's REST API over HTTPS — no SMTP ports needed, works on Render
@@ -85,7 +104,8 @@ async function sendMail({ to, subject, html, text }, maxAttempts = 3) {
                 const message = `Brevo ${response.status}: ${body}`;
                 if (isPermanentStatus(response.status)) {
                     if (response.status === 401 || response.status === 403) {
-                        await recordEmailStatus(false, `Brevo rejected the API key (${response.status})`);
+                        lastVerifiedOk = false;
+                        await recordEmailStatus(false, describeBrevoAuthError(response.status, body));
                     }
                     throw new PermanentEmailError(message);
                 }

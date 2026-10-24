@@ -156,24 +156,27 @@ const buildInviteResponse = ({ invite, email, role, expiresAt, inviter, inviteUr
 	inviteUrl,
 });
 
-// The email worker records Brevo's health under this key (emailWorker.js).
-const isEmailDeliveryDown = async () => {
+// The email worker records Brevo's health under this key (emailWorker.js). A missing
+// (expired) status means "unknown", so we still try to send.
+const getEmailOutageReason = async () => {
 	try {
 		const status = JSON.parse((await redis.get("email:status")) || "null");
-		return status?.ok === false;
+		return status?.ok === false ? status.reason || "email delivery is unavailable" : null;
 	} catch {
-		return false;
+		return null;
 	}
 };
 
+/** Resolves to null when the email was queued, otherwise to the reason it couldn't be. */
 const queueInviteEmail = async (payload) => {
-	if (await isEmailDeliveryDown()) return false;
+	const outage = await getEmailOutageReason();
+	if (outage) return outage;
 	try {
 		await emailQueue.add("send_workspace_invite", payload);
-		return true;
+		return null;
 	} catch (queueErr) {
 		console.error("Queue error in sendInvite email:", queueErr.message);
-		return false;
+		return "the email queue is unavailable";
 	}
 };
 
@@ -287,7 +290,7 @@ export const sendInvite = async (req, res, next) => {
 				console.error("Notification error in sendInvite:", notificationErr.message);
 			}
 
-			const emailQueued = await queueInviteEmail({
+			const emailProblem = await queueInviteEmail({
 				to: existingUser.email,
 				userName: existingUser.name || existingUser.email,
 				workspaceName: workspace.name,
@@ -297,11 +300,11 @@ export const sendInvite = async (req, res, next) => {
 			});
 
 			return res.status(201).json({
-				message: emailQueued
-					? `Invitation sent to ${email}`
-					: `Invitation sent to ${email} in CollabBoard — they'll see it in their notifications. (The email couldn't be sent: email delivery is unavailable.)`,
+				message: emailProblem
+					? `Invitation sent to ${email} in CollabBoard — they'll see it in their notifications. The email couldn't be sent: ${emailProblem}.`
+					: `Invitation sent to ${email}`,
 				type: "existing_user_invite",
-				emailDelivery: emailQueued ? "queued" : "unavailable",
+				emailDelivery: emailProblem ? "unavailable" : "queued",
 				invite: buildInviteResponse({
 					invite,
 					email,
@@ -313,7 +316,7 @@ export const sendInvite = async (req, res, next) => {
 			});
 		}
 
-		const emailQueued = await queueInviteEmail({
+		const emailProblem = await queueInviteEmail({
 			to: email,
 			userName: email,
 			workspaceName: workspace.name,
@@ -323,11 +326,11 @@ export const sendInvite = async (req, res, next) => {
 		});
 
 		return res.status(201).json({
-			message: emailQueued
-				? `Invitation sent to ${email}`
-				: `Invite created for ${email}, but the email couldn't be sent (email delivery is unavailable). Use "Copy link" under Pending invitations to share it.`,
+			message: emailProblem
+				? `Invite created for ${email}, but the email couldn't be sent: ${emailProblem}. Use "Copy link" under Pending invitations to share it.`
+				: `Invitation sent to ${email}`,
 			type: "email_invite",
-			emailDelivery: emailQueued ? "queued" : "unavailable",
+			emailDelivery: emailProblem ? "unavailable" : "queued",
 			invite: buildInviteResponse({
 				invite,
 				email,

@@ -4,6 +4,7 @@ import cookieParser from "cookie-parser";
 import compression from "compression";
 import morgan from "morgan";
 import passport from "passport";
+import mongoose from "mongoose";
 import { createBullBoard } from "@bull-board/api";
 import { BullAdapter } from "@bull-board/api/bullAdapter";
 import { ExpressAdapter } from "@bull-board/express";
@@ -43,6 +44,14 @@ if (process.env.NODE_ENV !== "production") {
 	});
 	app.use("/admin/queues", serverAdapter.getRouter());
 }
+
+// ─── Health check ──────────────────────────────────────────────────────────────
+// Cheap, unauthenticated and outside the rate limiters: used by the Render
+// keep-alive pings (services/keepAlive.js + .github/workflows/keep-render-awake.yml).
+app.get("/health", (req, res) => {
+	const dbUp = mongoose.connection.readyState === 1;
+	res.status(dbUp ? 200 : 503).json({ status: dbUp ? "ok" : "degraded", db: dbUp ? "up" : "down", uptime: Math.round(process.uptime()) });
+});
 
 // ─── Rate limiting ─────────────────────────────────────────────────────────────
 app.use("/api/v1", apiLimiter);

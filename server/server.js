@@ -6,6 +6,7 @@ import http from "http";
 import app from "./src/app.js";
 import { connectDB } from "./src/config/db.js";
 import { initSocket } from "./src/config/socket.js";
+import { startKeepAlive } from "./src/services/keepAlive.js";
 
 const PORT = process.env.PORT || 5000;
 const startServer = async () => {
@@ -13,7 +14,10 @@ const startServer = async () => {
 	const httpServer = http.createServer(app);
 	const io = await initSocket(httpServer);
 	app.set("io", io);
-	httpServer.listen(PORT, () => console.log(`Server on ${PORT}`));
+	httpServer.listen(PORT, () => {
+		console.log(`Server on ${PORT}`);
+		startKeepAlive();
+	});
 };
 
 startServer().catch((err) => {

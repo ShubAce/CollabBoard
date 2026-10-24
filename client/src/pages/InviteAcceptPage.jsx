@@ -1,56 +1,146 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { AnimatePresence, motion } from "framer-motion";
 import api from "../api/axios";
+import AuthLayout, { AuthError } from "../components/AuthLayout.jsx";
 import Icon from "../components/ui/Icon.jsx";
+import { EASE_OUT, fadeUp, staggerContainer } from "../lib/motion";
 import useAuthStore from "../store/authStore";
 
-function InviteCard({ children }) {
+const WS_COLORS = ["#7c72ff", "#60a5fa", "#3dd68c", "#ff6b6b", "#f0c040", "#a78bfa", "#ff8c42", "#f472b6"];
+const strengthLabel = ["", "Weak", "Fair", "Good", "Strong"];
+const strengthColor = ["", "var(--danger)", "var(--warning)", "#60A5FA", "var(--success)"];
+
+// Same state swap as RegisterPage: the card stays put while its content crossfades.
+const swap = {
+	initial: { opacity: 0, y: 12, filter: "blur(4px)" },
+	animate: { opacity: 1, y: 0, filter: "blur(0px)", transition: { duration: 0.4, ease: EASE_OUT } },
+	exit: { opacity: 0, y: -8, filter: "blur(4px)", transition: { duration: 0.2 } },
+};
+
+const HERO_PATHS = {
+	mail: ["M4 4h16v16H4V4Z", "m4 7 8 6 8-6"],
+	check: ["M22 11.1V12a10 10 0 1 1-5.9-9.1", "M22 4 12 14l-3-3"],
+	alert: ["M10.3 4.3 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0Z", "M12 9v4m0 4h.01"],
+};
+
+function getInitials(name = "") {
+	return name
+		.split(" ")
+		.map((w) => w[0])
+		.join("")
+		.toUpperCase()
+		.slice(0, 2);
+}
+
+function getColor(name = "") {
+	let hash = 0;
+	for (const c of name) hash = c.charCodeAt(0) + ((hash << 5) - hash);
+	return WS_COLORS[Math.abs(hash) % WS_COLORS.length];
+}
+
+function getPasswordStrength(pw) {
+	let score = 0;
+	if (pw.length >= 8) score++;
+	if (/[A-Z]/.test(pw)) score++;
+	if (/[0-9]/.test(pw)) score++;
+	if (/[^A-Za-z0-9]/.test(pw)) score++;
+	return score;
+}
+
+/** Icon tile that springs in and draws its glyph (matches RegisterPage's success state). */
+function HeroIcon({ name, danger = false }) {
+	const [first, second] = HERO_PATHS[name];
+	return (
+		<motion.div
+			initial={{ scale: 0.6, opacity: 0 }}
+			animate={{ scale: 1, opacity: 1 }}
+			transition={{ type: "spring", stiffness: 300, damping: 16, delay: 0.1 }}
+			className="icon-box icon-box-accent"
+			style={{
+				width: 60,
+				height: 60,
+				margin: "0 auto 18px",
+				borderRadius: 16,
+				...(danger
+					? { background: "var(--danger-muted)", borderColor: "rgba(255,107,107,0.35)", color: "var(--danger)", boxShadow: "0 0 40px rgba(255,107,107,0.3)" }
+					: { boxShadow: "0 0 40px rgba(124,114,255,0.45)" }),
+			}}
+		>
+			<svg
+				width="26"
+				height="26"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="2"
+				strokeLinecap="round"
+				strokeLinejoin="round"
+				aria-hidden
+			>
+				<motion.path
+					d={first}
+					initial={{ pathLength: 0 }}
+					animate={{ pathLength: 1 }}
+					transition={{ duration: 0.6, delay: 0.25 }}
+				/>
+				<motion.path
+					d={second}
+					initial={{ pathLength: 0 }}
+					animate={{ pathLength: 1 }}
+					transition={{ duration: 0.4, delay: 0.7 }}
+				/>
+			</svg>
+		</motion.div>
+	);
+}
+
+function InviteSummary({ name, role }) {
+	const color = getColor(name || "");
 	return (
 		<div
 			style={{
-				minHeight: "100vh",
-				background: "var(--bg-base)",
 				display: "flex",
 				alignItems: "center",
-				justifyContent: "center",
-				padding: 16,
-				position: "relative",
-				overflow: "hidden",
+				gap: 12,
+				padding: "12px 14px",
+				borderRadius: "var(--r-md)",
+				background: `radial-gradient(120% 160% at 0% 0%, ${color}1f, transparent 60%), var(--bg-surface-2)`,
+				border: "1px solid var(--border-default)",
+				textAlign: "left",
+				minWidth: 0,
 			}}
 		>
 			<div
-				className="grid-pattern"
-				style={{ position: "absolute", inset: 0, opacity: 0.05, pointerEvents: "none" }}
-			/>
-			<div
-				className="fade-in"
 				style={{
-					position: "relative",
-					width: "100%",
-					maxWidth: 480,
-					background: "var(--bg-surface)",
-					border: "1px solid var(--border)",
-					borderRadius: "var(--radius-xl)",
-					boxShadow: "var(--shadow-modal)",
-					overflow: "hidden",
+					width: 40,
+					height: 40,
+					borderRadius: "var(--r-md)",
+					background: `${color}22`,
+					border: `2px solid ${color}44`,
+					boxShadow: `0 0 20px ${color}33`,
+					display: "flex",
+					alignItems: "center",
+					justifyContent: "center",
+					fontSize: 14,
+					fontWeight: 700,
+					color,
+					flexShrink: 0,
 				}}
 			>
-				<div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
-					<Link
-						to="/"
-						style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none" }}
-					>
-						<Icon
-							name="spark"
-							size={18}
-							style={{ color: "var(--accent)" }}
-						/>
-						<span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>CollabBoard</span>
-					</Link>
-				</div>
-				<div style={{ padding: 28 }}>{children}</div>
+				{getInitials(name || "") || "WS"}
 			</div>
+			<div style={{ minWidth: 0, flex: 1 }}>
+				<p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name || "a workspace"}</p>
+				<p style={{ margin: "2px 0 0", fontSize: 12, color: "var(--text-muted)" }}>Workspace</p>
+			</div>
+			<span
+				className="badge badge-accent"
+				style={{ textTransform: "capitalize", flexShrink: 0 }}
+			>
+				{role}
+			</span>
 		</div>
 	);
 }
@@ -133,299 +223,297 @@ export default function InviteAcceptPage() {
 		}
 	};
 
-	if (status === "loading") {
-		return (
-			<InviteCard>
-				<div style={{ textAlign: "center", padding: "20px 0" }}>
-					<div
-						className="spinner"
-						style={{ width: 32, height: 32, margin: "0 auto 16px", borderWidth: 3 }}
-					/>
-					<p style={{ fontSize: 14, color: "var(--text-secondary)" }}>Checking your invitation...</p>
-				</div>
-			</InviteCard>
-		);
-	}
+	const view = status === "loading" || status === "invalid" || status === "accepted" ? status : accessToken ? "accept" : "register";
+	const strength = getPasswordStrength(form.password);
+	const roleLabel = preview?.role || "member";
 
-	if (status === "invalid") {
-		return (
-			<InviteCard>
-				<div style={{ textAlign: "center" }}>
-					<div
-						style={{
-							width: 52,
-							height: 52,
-							borderRadius: "50%",
-							background: "var(--danger-muted)",
-							border: "2px solid rgba(248,113,113,0.3)",
-							display: "flex",
-							alignItems: "center",
-							justifyContent: "center",
-							color: "var(--danger)",
-							margin: "0 auto 16px",
-						}}
-					>
-						<Icon
-							name="alert"
-							size={24}
-						/>
-					</div>
-					<h1 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 10px" }}>Invitation unavailable</h1>
-					<p style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 24, lineHeight: 1.5 }}>
-						{error || "This invite may have expired or already been used."}
-					</p>
-					<Link
-						to={invalidCta.to}
-						className="btn btn-primary btn-sm"
-					>
-						{invalidCta.label}
-					</Link>
-				</div>
-			</InviteCard>
-		);
-	}
-
-	if (status === "accepted") {
-		return (
-			<InviteCard>
-				<div style={{ textAlign: "center" }}>
-					<div
-						className="icon-box icon-box-accent"
-						style={{ width: 52, height: 52, margin: "0 auto 16px" }}
-					>
-						<Icon
-							name="check"
-							size={24}
-						/>
-					</div>
-					<h1 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 8px" }}>Invite already accepted</h1>
-					<p style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 20, lineHeight: 1.5 }}>
-						You are already a member of {previewWorkspaceName || "this workspace"}.
-					</p>
-					<Link
-						to={previewWorkspaceId ? `/app/workspaces/${previewWorkspaceId}` : "/app"}
-						className="btn btn-primary btn-sm"
-					>
-						Open workspace
-					</Link>
-				</div>
-			</InviteCard>
-		);
-	}
-
-	// Logged-in user: show accept button
-	if (accessToken) {
-		return (
-			<InviteCard>
-				<div style={{ textAlign: "center" }}>
-					<div
-						className="icon-box icon-box-accent"
-						style={{ width: 52, height: 52, margin: "0 auto 16px" }}
-					>
-						<Icon
-							name="mail"
-							size={24}
-						/>
-					</div>
-					<h1 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 6px" }}>You've been invited!</h1>
-					<p style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 6 }}>
-						{previewInviterName && (
-							<>
-								<span style={{ fontWeight: 500, color: "var(--text-primary)" }}>{previewInviterName}</span> invited you to join
-							</>
-						)}
-					</p>
-					<div
-						style={{
-							background: "var(--bg-surface-2)",
-							borderRadius: "var(--radius-md)",
-							padding: "12px 16px",
-							marginBottom: 20,
-							display: "inline-block",
-							minWidth: 200,
-						}}
-					>
-						<p style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
-							{previewWorkspaceName || "a workspace"}
-						</p>
-						<p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
-							as <span style={{ textTransform: "capitalize", color: "var(--text-secondary)" }}>{preview?.role || "member"}</span>
-						</p>
-					</div>
-
-					{error && (
+	return (
+		<AuthLayout
+			shakeKey={view === "accept" || view === "register" ? error : undefined}
+			maxWidth={440}
+		>
+			<AnimatePresence
+				mode="wait"
+				initial={false}
+			>
+				<motion.div
+					key={view}
+					variants={swap}
+					initial="initial"
+					animate="animate"
+					exit="exit"
+				>
+					{view === "loading" && (
 						<div
-							style={{
-								background: "var(--danger-muted)",
-								border: "1px solid rgba(248,113,113,0.3)",
-								borderRadius: "var(--radius-md)",
-								padding: "8px 12px",
-								fontSize: 13,
-								color: "var(--danger)",
-								marginBottom: 16,
-							}}
+							role="status"
+							style={{ textAlign: "center", padding: "28px 0 20px" }}
 						>
-							{error}
+							<div
+								className="spinner"
+								style={{ width: 32, height: 32, margin: "0 auto 16px", borderWidth: 3 }}
+							/>
+							<p style={{ fontSize: 14, color: "var(--text-secondary)", margin: 0 }}>Checking your invitation...</p>
 						</div>
 					)}
 
-					<div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-						<Link
-							to="/app"
-							className="btn btn-ghost btn-sm"
-						>
-							Not now
-						</Link>
-						<button
-							type="button"
-							onClick={handleAccept}
-							disabled={submitting}
-							className="btn btn-primary btn-sm"
-						>
-							{submitting ? (
-								<>
-									<span
-										className="spinner"
-										style={{ width: 12, height: 12 }}
-									/>{" "}
-									Joining...
-								</>
-							) : (
-								"Accept and join"
-							)}
-						</button>
-					</div>
-				</div>
-			</InviteCard>
-		);
-	}
-
-	// Not logged in: show register form
-	return (
-		<InviteCard>
-			<div style={{ textAlign: "center", marginBottom: 24 }}>
-				<div
-					className="icon-box icon-box-accent"
-					style={{ width: 52, height: 52, margin: "0 auto 12px" }}
-				>
-					<Icon
-						name="mail"
-						size={24}
-					/>
-				</div>
-				<h1 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 6px" }}>
-					Join {previewWorkspaceName || "a workspace"}
-				</h1>
-				<p style={{ fontSize: 14, color: "var(--text-secondary)" }}>
-					{previewInviterName ? (
-						<>
-							<span style={{ fontWeight: 500, color: "var(--text-primary)" }}>{previewInviterName}</span> invited you. Create an account
-							to continue
-						</>
-					) : (
-						"Create an account to continue"
-					)}
-				</p>
-			</div>
-
-			{error && (
-				<div
-					style={{
-						background: "var(--danger-muted)",
-						border: "1px solid rgba(248,113,113,0.3)",
-						borderRadius: "var(--radius-md)",
-						padding: "8px 12px",
-						fontSize: 13,
-						color: "var(--danger)",
-						marginBottom: 16,
-					}}
-				>
-					{error}
-				</div>
-			)}
-
-			<form
-				onSubmit={handleRegister}
-				style={{ display: "flex", flexDirection: "column", gap: 14 }}
-			>
-				<div>
-					<label style={{ display: "block", fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 6 }}>
-						Full name
-					</label>
-					<input
-						value={form.name}
-						onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-						placeholder="Arjun Kumar"
-						required
-						disabled={submitting}
-						className="input"
-						autoFocus
-					/>
-				</div>
-				<div>
-					<label style={{ display: "block", fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 6 }}>
-						Password (8+ chars)
-					</label>
-					<div style={{ position: "relative" }}>
-						<input
-							type={showPw ? "text" : "password"}
-							value={form.password}
-							onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
-							placeholder="********"
-							required
-							minLength={8}
-							disabled={submitting}
-							className="input"
-							style={{ paddingRight: 44 }}
-						/>
-						<button
-							type="button"
-							onClick={() => setShowPw((v) => !v)}
-							style={{
-								position: "absolute",
-								right: 12,
-								top: "50%",
-								transform: "translateY(-50%)",
-								background: "none",
-								border: "none",
-								color: "var(--text-muted)",
-								cursor: "pointer",
-								fontSize: 14,
-								padding: 0,
-							}}
-						>
-							<Icon
-								name={showPw ? "eyeOff" : "eye"}
-								size={16}
+					{view === "invalid" && (
+						<div style={{ textAlign: "center", padding: "8px 0" }}>
+							<HeroIcon
+								name="alert"
+								danger
 							/>
-						</button>
-					</div>
-				</div>
-				<button
-					type="submit"
-					disabled={submitting}
-					className="btn btn-primary"
-					style={{ width: "100%", padding: "10px 16px" }}
-				>
-					{submitting ? (
-						<>
-							<span className="spinner" /> Creating account...
-						</>
-					) : (
-						"Create account and join"
+							<h1 style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.02em", color: "var(--text-primary)", margin: "0 0 8px" }}>Invitation unavailable</h1>
+							<p style={{ fontSize: 14, color: "var(--text-secondary)", margin: "0 0 24px", lineHeight: 1.6 }}>
+								{error || "This invite may have expired or already been used."}
+							</p>
+							<Link
+								to={invalidCta.to}
+								className="btn btn-primary"
+								style={{ width: "100%", minHeight: 42 }}
+							>
+								{invalidCta.label}
+							</Link>
+						</div>
 					)}
-				</button>
-			</form>
 
-			<p style={{ textAlign: "center", marginTop: 16, fontSize: 13, color: "var(--text-secondary)" }}>
-				Already have an account?{" "}
-				<Link
-					to={loginHref}
-					style={{ color: "var(--accent)", fontWeight: 500 }}
-				>
-					Log in
-				</Link>
-			</p>
-		</InviteCard>
+					{view === "accepted" && (
+						<div style={{ textAlign: "center", padding: "8px 0" }}>
+							<HeroIcon name="check" />
+							<h1 style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.02em", color: "var(--text-primary)", margin: "0 0 8px" }}>Invite already accepted</h1>
+							<p style={{ fontSize: 14, color: "var(--text-secondary)", margin: "0 0 24px", lineHeight: 1.6 }}>
+								You are already a member of <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>{previewWorkspaceName || "this workspace"}</span>.
+							</p>
+							<Link
+								to={previewWorkspaceId ? `/app/workspaces/${previewWorkspaceId}` : "/app"}
+								className="btn btn-primary"
+								style={{ width: "100%", minHeight: 42 }}
+							>
+								Open workspace
+								<Icon
+									name="arrowRight"
+									size={15}
+								/>
+							</Link>
+						</div>
+					)}
+
+					{/* Logged-in user: show accept button */}
+					{view === "accept" && (
+						<motion.div
+							variants={staggerContainer(0.06, 0.15)}
+							initial="hidden"
+							animate="show"
+							style={{ textAlign: "center" }}
+						>
+							<HeroIcon name="mail" />
+							<motion.div variants={fadeUp}>
+								<h1 style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.02em", color: "var(--text-primary)", margin: "0 0 6px" }}>You&apos;ve been invited!</h1>
+								<p style={{ fontSize: 14, color: "var(--text-secondary)", margin: "0 0 20px" }}>
+									{previewInviterName ? (
+										<>
+											<span style={{ fontWeight: 500, color: "var(--text-primary)" }}>{previewInviterName}</span> invited you to join
+										</>
+									) : (
+										"You have been invited to join"
+									)}
+								</p>
+							</motion.div>
+
+							<motion.div
+								variants={fadeUp}
+								style={{ marginBottom: 20 }}
+							>
+								<InviteSummary
+									name={previewWorkspaceName}
+									role={roleLabel}
+								/>
+							</motion.div>
+
+							<AuthError message={error} />
+
+							<motion.div
+								variants={fadeUp}
+								style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr", gap: 10 }}
+							>
+								<Link
+									to="/app"
+									className="btn btn-ghost"
+									style={{ minHeight: 42, color: "var(--text-primary)" }}
+								>
+									Not now
+								</Link>
+								<button
+									type="button"
+									onClick={handleAccept}
+									disabled={submitting}
+									className="btn btn-primary"
+									style={{ minHeight: 42 }}
+								>
+									{submitting ? (
+										<>
+											<span className="spinner" /> Joining...
+										</>
+									) : (
+										"Accept and join"
+									)}
+								</button>
+							</motion.div>
+						</motion.div>
+					)}
+
+					{/* Not logged in: show register form */}
+					{view === "register" && (
+						<motion.div
+							variants={staggerContainer(0.06, 0.15)}
+							initial="hidden"
+							animate="show"
+						>
+							<motion.div variants={fadeUp}>
+								<h1 style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.02em", color: "var(--text-primary)", margin: "0 0 4px" }}>Join {previewWorkspaceName || "a workspace"}</h1>
+								<p style={{ fontSize: 14, color: "var(--text-secondary)", margin: "0 0 20px" }}>
+									{previewInviterName ? (
+										<>
+											<span style={{ fontWeight: 500, color: "var(--text-primary)" }}>{previewInviterName}</span> invited you. Create an account to continue
+										</>
+									) : (
+										"Create an account to continue"
+									)}
+								</p>
+							</motion.div>
+
+							<motion.div
+								variants={fadeUp}
+								style={{ marginBottom: 20 }}
+							>
+								<InviteSummary
+									name={previewWorkspaceName}
+									role={roleLabel}
+								/>
+							</motion.div>
+
+							<AuthError message={error} />
+
+							<form
+								onSubmit={handleRegister}
+								style={{ display: "flex", flexDirection: "column", gap: 16 }}
+							>
+								<motion.div variants={fadeUp}>
+									<label
+										className="auth-label"
+										htmlFor="invite-name"
+									>
+										Full name
+									</label>
+									<input
+										id="invite-name"
+										value={form.name}
+										onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+										placeholder="Arjun Kumar"
+										autoComplete="name"
+										required
+										disabled={submitting}
+										className="input auth-input"
+										autoFocus
+									/>
+								</motion.div>
+								<motion.div variants={fadeUp}>
+									<div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+										<label
+											className="auth-label"
+											htmlFor="invite-password"
+										>
+											Password
+										</label>
+										<span style={{ fontSize: 11, color: "var(--text-muted)" }}>8+ chars</span>
+									</div>
+									<div style={{ position: "relative" }}>
+										<input
+											id="invite-password"
+											type={showPw ? "text" : "password"}
+											value={form.password}
+											onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
+											placeholder="••••••••"
+											autoComplete="new-password"
+											required
+											minLength={8}
+											disabled={submitting}
+											className="input auth-input"
+											style={{ paddingRight: 44 }}
+										/>
+										<button
+											type="button"
+											onClick={() => setShowPw((v) => !v)}
+											aria-label={showPw ? "Hide password" : "Show password"}
+											style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 0, display: "flex" }}
+										>
+											<Icon
+												name={showPw ? "eyeOff" : "eye"}
+												size={16}
+											/>
+										</button>
+									</div>
+									<AnimatePresence initial={false}>
+										{form.password && (
+											<motion.div
+												initial={{ height: 0, opacity: 0 }}
+												animate={{ height: "auto", opacity: 1 }}
+												exit={{ height: 0, opacity: 0 }}
+												transition={{ duration: 0.2, ease: EASE_OUT }}
+												style={{ overflow: "hidden" }}
+											>
+												<div style={{ display: "flex", gap: 4, marginTop: 10 }}>
+													{[1, 2, 3, 4].map((level) => (
+														<div
+															key={level}
+															className="pw-bar"
+															style={{ flex: 1 }}
+														>
+															<div
+																className="pw-fill"
+																style={{ width: strength >= level ? "100%" : "0%", background: strengthColor[strength], transitionDelay: `${(level - 1) * 40}ms` }}
+															/>
+														</div>
+													))}
+												</div>
+												<p style={{ fontSize: 11, color: strengthColor[strength], margin: "6px 0 0", minHeight: 16 }}>{strengthLabel[strength]}</p>
+											</motion.div>
+										)}
+									</AnimatePresence>
+								</motion.div>
+								<motion.div variants={fadeUp}>
+									<button
+										type="submit"
+										disabled={submitting}
+										className="btn btn-primary"
+										style={{ width: "100%", minHeight: 42, marginTop: 4 }}
+									>
+										{submitting ? (
+											<>
+												<span className="spinner" /> Creating account...
+											</>
+										) : (
+											"Create account and join"
+										)}
+									</button>
+								</motion.div>
+							</form>
+
+							<motion.p
+								variants={fadeUp}
+								style={{ textAlign: "center", margin: "22px 0 0", fontSize: 14, color: "var(--text-secondary)" }}
+							>
+								Already have an account?{" "}
+								<Link
+									to={loginHref}
+									style={{ fontWeight: 500 }}
+								>
+									Log in
+								</Link>
+							</motion.p>
+						</motion.div>
+					)}
+				</motion.div>
+			</AnimatePresence>
+		</AuthLayout>
 	);
 }

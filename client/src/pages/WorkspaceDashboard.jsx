@@ -1,8 +1,12 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { AnimatePresence, motion } from "framer-motion";
 import api from "../api/axios";
+import ModalShell from "../components/motion/ModalShell.jsx";
+import SpotlightCard from "../components/motion/SpotlightCard.jsx";
 import Icon from "../components/ui/Icon.jsx";
+import { EASE_OUT, fadeUp, staggerContainer } from "../lib/motion";
 import useAuthStore from "../store/authStore";
 
 const WS_COLORS = ["#7c72ff", "#60a5fa", "#3dd68c", "#ff6b6b", "#f0c040", "#a78bfa", "#ff8c42", "#f472b6"];
@@ -115,20 +119,23 @@ function CreateBoardModal({ workspaceId, onClose, onCreated }) {
 	};
 
 	return (
-		<div
-			className="modal-overlay"
-			onClick={(event) => event.target === event.currentTarget && onClose()}
+		<ModalShell
+			onClose={onClose}
+			maxWidth={420}
+			labelledBy="create-board-title"
 		>
-			<div
-				className="modal fade-in"
-				style={{ maxWidth: 420 }}
-			>
 				<div className="modal-header">
-					<h2 style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>Create board</h2>
+					<h2
+						id="create-board-title"
+						style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}
+					>
+						Create board
+					</h2>
 					<button
 						type="button"
 						onClick={onClose}
-						style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4 }}
+						aria-label="Close"
+						style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4, display: "flex" }}
 					>
 						<Icon
 							name="close"
@@ -169,7 +176,7 @@ function CreateBoardModal({ workspaceId, onClose, onCreated }) {
 									<span
 										key={c.label}
 										className="badge"
-										style={{ background: `${c.color}22`, color: c.color }}
+										style={{ background: `color-mix(in srgb, ${c.color} 14%, transparent)`, color: c.color }}
 									>
 										{c.label}
 									</span>
@@ -194,22 +201,23 @@ function CreateBoardModal({ workspaceId, onClose, onCreated }) {
 						</button>
 					</div>
 				</form>
-			</div>
-		</div>
-	);
-}
+				</ModalShell>
+				);
+				}
 
 function TaskRow({ task }) {
 	const due = getDueMeta(task.dueDate);
 	const toneColor = due.tone === "danger" ? "var(--red)" : due.tone === "warning" ? "var(--orange)" : "var(--text-secondary)";
 	return (
-		<div
+		<motion.div
+			variants={fadeUp}
+			className="row-hover"
 			style={{
 				display: "grid",
 				gridTemplateColumns: "16px minmax(0, 1fr) auto",
 				alignItems: "center",
 				gap: 12,
-				padding: "10px 12px",
+				padding: "10px 14px",
 				borderBottom: "1px solid var(--border-subtle)",
 			}}
 		>
@@ -238,40 +246,50 @@ function TaskRow({ task }) {
 				<p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--text-muted)" }}>{task.boardName}</p>
 			</div>
 			<span style={{ fontSize: 12, color: toneColor, fontWeight: 600 }}>{due.label}</span>
-		</div>
-	);
-}
+			</motion.div>
+			);
+			}
 
 function BoardCard({ summary }) {
 	return (
-		<div
-			className="card"
-			style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}
-		>
-			<p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>{summary.name}</p>
+		<SpotlightCard style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12, height: "100%" }}>
+			<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+				<p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{summary.name}</p>
+				<span style={{ fontSize: 12, fontWeight: 600, color: "var(--green)", fontVariantNumeric: "tabular-nums" }}>{summary.progress}%</span>
+			</div>
 			<div
 				style={{
-					height: 8,
+					height: 6,
 					borderRadius: 999,
 					background: "var(--border-default)",
 					overflow: "hidden",
 				}}
 			>
-				<div
-					style={{
-						width: `${summary.progress}%`,
-						height: "100%",
-						background: "var(--green)",
-					}}
+				<motion.div
+					initial={{ scaleX: 0 }}
+					animate={{ scaleX: summary.progress / 100 }}
+					transition={{ duration: 1, ease: EASE_OUT, delay: 0.3 }}
+					style={{ width: "100%", height: "100%", background: "linear-gradient(90deg, var(--green), #6ee7b7)", transformOrigin: "left", borderRadius: 999 }}
 				/>
 			</div>
-			<div style={{ display: "grid", gap: 4, fontSize: 12, color: "var(--text-secondary)" }}>
-				<span>{summary.counts.todo} To Do</span>
-				<span>{summary.counts.inProgress} In Progress</span>
-				<span>{summary.counts.review} Review</span>
+			<div style={{ display: "grid", gap: 6, fontSize: 12, color: "var(--text-secondary)" }}>
+				{[
+					[summary.counts.todo, "To Do", "var(--col-todo)"],
+					[summary.counts.inProgress, "In Progress", "var(--col-inprogress)"],
+					[summary.counts.review, "Review", "var(--col-review)"],
+				].map(([count, label, color]) => (
+					<span
+						key={label}
+						style={{ display: "flex", alignItems: "center", gap: 8 }}
+					>
+						<span style={{ width: 6, height: 6, borderRadius: "50%", background: color }} />
+						<span style={{ flex: 1 }}>{label}</span>
+						<span style={{ color: "var(--text-primary)", fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>{count}</span>
+					</span>
+				))}
 			</div>
-			<span style={{ fontSize: 11, color: "var(--text-muted)" }}>Updated {summary.updatedLabel}</span>
-		</div>
+			<span style={{ fontSize: 11, color: "var(--text-muted)", marginTop: "auto" }}>Updated {summary.updatedLabel}</span>
+		</SpotlightCard>
 	);
 }
 
@@ -505,13 +523,18 @@ export default function WorkspaceDashboard() {
 	const todayLabel = formatFullDate(new Date());
 
 	return (
-		<section
-			className="fade-in"
+		<motion.section
+			variants={staggerContainer(0.08)}
+			initial="hidden"
+			animate="show"
 			style={{ display: "flex", flexDirection: "column", gap: 32 }}
 		>
-			<div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 16 }}>
+			<motion.div
+				variants={fadeUp}
+				style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 16 }}
+			>
 				<div>
-					<h1 style={{ fontSize: 22, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>{greeting}</h1>
+					<h1 className="page-title">{greeting}</h1>
 					<p style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 6 }}>
 						Here is what is happening in {workspace?.name || "your workspace"}.
 					</p>
@@ -521,11 +544,11 @@ export default function WorkspaceDashboard() {
 					style={{ alignSelf: "flex-start" }}
 				>
 					{todayLabel}
-				</span>
-			</div>
-
-			<div>
-				<SectionHeader
+					</span>
+					</motion.div>
+					
+					<motion.div variants={fadeUp}>
+					<SectionHeader
 					title="My tasks due this week"
 					action={
 						<Link
@@ -571,31 +594,39 @@ export default function WorkspaceDashboard() {
 						</div>
 					)}
 					{dueTasks.length > 0 && (
-						<div>
-							{dueTasks.map((task, index) => (
+					<motion.div
+						variants={staggerContainer(0.05, 0.2)}
+						initial="hidden"
+						animate="show"
+					>
+					{dueTasks.map((task, index) => (
 								<TaskRow
 									key={`${task._id}-${index}`}
 									task={task}
 								/>
 							))}
-						</div>
-					)}
-				</div>
-			</div>
-
-			<div>
-				<SectionHeader
-					title="Boards"
-					action={
-						<button
-							type="button"
-							className="btn btn-primary btn-sm"
-							onClick={() => setShowCreate(true)}
-						>
-							+ New board
-						</button>
-					}
-				/>
+							</motion.div>
+							)}
+							</div>
+							</motion.div>
+							
+							<motion.div variants={fadeUp}>
+							<SectionHeader
+								title="Boards"
+								action={
+									<button
+										type="button"
+										className="btn btn-primary btn-sm"
+										onClick={() => setShowCreate(true)}
+									>
+										<Icon
+											name="plus"
+											size={12}
+										/>
+										New board
+									</button>
+								}
+							/>
 				{summaryStatus === "loading" && boardSummaries.length === 0 && (
 					<div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
 						{[1, 2, 3].map((item) => (
@@ -625,7 +656,12 @@ export default function WorkspaceDashboard() {
 					</div>
 				)}
 				{boardSummaries.length > 0 && (
-					<div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
+				<motion.div
+					style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 16 }}
+					variants={staggerContainer(0.06)}
+					initial="hidden"
+					animate="show"
+				>
 						{boardSummaries.map((summary) => (
 							<Link
 								key={summary.id}
@@ -633,15 +669,15 @@ export default function WorkspaceDashboard() {
 								style={{ textDecoration: "none" }}
 							>
 								<BoardCard summary={summary} />
-							</Link>
-						))}
-					</div>
-				)}
-			</div>
-
-			<div>
-				<SectionHeader
-					title="Recent activity"
+								</Link>
+								))}
+								</motion.div>
+								)}
+								</motion.div>
+								
+								<motion.div variants={fadeUp}>
+								<SectionHeader
+								title="Recent activity"
 					action={
 						<Link
 							to={`/app/workspaces/${workspaceId}/activity`}
@@ -659,9 +695,10 @@ export default function WorkspaceDashboard() {
 						<div style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-secondary)" }}>No recent activity yet.</div>
 					)}
 					{activity.map((log, index) => (
-						<div
-							key={log._id}
-							style={{
+					<div
+					key={log._id}
+					className="row-hover"
+					style={{
 								display: "grid",
 								gridTemplateColumns: "32px minmax(0, 1fr) auto",
 								gap: 12,
@@ -696,12 +733,12 @@ export default function WorkspaceDashboard() {
 							</div>
 							<span style={{ fontSize: 11, color: "var(--text-muted)" }}>{formatRelativeTime(log.createdAt)}</span>
 						</div>
-					))}
-				</div>
-			</div>
-
-			<div>
-				<SectionHeader title={`Team status (${members.length})`} />
+						))}
+						</div>
+						</motion.div>
+						
+						<motion.div variants={fadeUp}>
+						<SectionHeader title={`Team status (${members.length})`} />
 				<div
 					className="card"
 					style={{ padding: 0, overflow: "hidden" }}
@@ -719,12 +756,14 @@ export default function WorkspaceDashboard() {
 						style={{ fontSize: 12, color: "var(--accent)" }}
 					>
 						Manage members
-					</Link>
-				</div>
-			</div>
-
-			{showCreate && (
-				<CreateBoardModal
+						</Link>
+						</div>
+						</motion.div>
+						
+						<AnimatePresence>
+						{showCreate && (
+						<CreateBoardModal
+						key="create-board"
 					workspaceId={workspaceId}
 					onClose={() => setShowCreate(false)}
 					onCreated={(board) => {
@@ -740,9 +779,10 @@ export default function WorkspaceDashboard() {
 							...prev,
 						]);
 						setShowCreate(false);
-					}}
-				/>
-			)}
-		</section>
-	);
-}
+						}}
+						/>
+						)}
+						</AnimatePresence>
+						</motion.section>
+						);
+						}

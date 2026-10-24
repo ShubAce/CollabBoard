@@ -2,8 +2,14 @@
 import { DragDropContext, Draggable, Droppable } from "@hello-pangea/dnd";
 import { useEffect, useMemo, useState, useRef } from "react";
 import { Link, useParams } from "react-router-dom";
+import { AnimatePresence, motion } from "framer-motion";
+import { useMediaQuery } from "usehooks-ts";
 import api from "../api/axios";
+import FlipNumber from "../components/motion/FlipNumber.jsx";
+import ModalShell from "../components/motion/ModalShell.jsx";
 import Icon from "../components/ui/Icon.jsx";
+import SegmentedTabs from "../components/ui/SegmentedTabs.jsx";
+import { EASE_IN, EASE_OUT, MOBILE_QUERY, SPRING_SOFT } from "../lib/motion";
 import Whiteboard from "../features/board/Whiteboard";
 import { addTaskToColumn, moveTaskInBoard, removeTaskFromBoard, reorderColumns, updateTaskInBoard } from "../features/board/boardState";
 import { useBoardSocket } from "../hooks/useBoardSocket";
@@ -275,6 +281,7 @@ function ListRow({ task, column, onOpen }) {
 }
 
 function TaskPanel({ task, column, onClose, onSubTaskAdd, onSubTaskToggle, onSubTaskDelete, onDependencyAdd, onDependencyRemove, onTaskFieldUpdate, onAssigneeAdd, onAssigneeRemove, onAttachmentAdd, onAttachmentRemove, relationOptions, workspaceMembers, workspaceId, boardId }) {
+	const isMobile = useMediaQuery(MOBILE_QUERY);
 	const [activeTab, setActiveTab] = useState("comments");
 	const [subTaskTitle, setSubTaskTitle] = useState("");
 	const [subTaskBusy, setSubTaskBusy] = useState(false);
@@ -416,7 +423,12 @@ function TaskPanel({ task, column, onClose, onSubTaskAdd, onSubTaskToggle, onSub
 	};
 
 	return (
-		<aside className="task-panel">
+	<motion.aside
+		className="task-panel"
+		initial={isMobile ? { y: "100%" } : { opacity: 0, x: 40 }}
+		animate={isMobile ? { y: 0, transition: SPRING_SOFT } : { opacity: 1, x: 0, transition: { duration: 0.25, ease: EASE_OUT } }}
+		exit={isMobile ? { y: "100%", transition: { duration: 0.2, ease: EASE_IN } } : { opacity: 0, x: 40, transition: { duration: 0.18, ease: EASE_IN } }}
+	>
 			<div className="task-panel-header">
 				<button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
 					<Icon name="close" size={14} /> Close
@@ -642,14 +654,16 @@ function TaskPanel({ task, column, onClose, onSubTaskAdd, onSubTaskToggle, onSub
 
 			<div className="task-panel-section">
 				<h3>Activity & Comments</h3>
-				<div className="task-panel-tabs">
-					<button type="button" className={`tab-button${activeTab === "comments" ? " active" : ""}`} onClick={() => setActiveTab("comments")}>
-						Comments {comments.length > 0 && <span className="badge badge-muted" style={{ marginLeft: 4 }}>{comments.length}</span>}
-					</button>
-					<button type="button" className={`tab-button${activeTab === "history" ? " active" : ""}`} onClick={() => setActiveTab("history")}>
-						History
-					</button>
-				</div>
+				<SegmentedTabs
+					id={`task-panel-${task._id}`}
+					className="task-panel-tabs"
+					value={activeTab}
+					onChange={setActiveTab}
+					items={[
+						{ value: "comments", label: "Comments", count: comments.length > 0 ? comments.length : undefined },
+						{ value: "history", label: "History" },
+					]}
+				/>
 
 				{activeTab === "comments" && (
 					<>
@@ -707,8 +721,8 @@ function TaskPanel({ task, column, onClose, onSubTaskAdd, onSubTaskToggle, onSub
 					</>
 				)}
 				{activeTab === "history" && <p className="task-meta-muted">Activity history coming soon.</p>}
-			</div>
-		</aside>
+				</div>
+				</motion.aside>
 	);
 }
 const SHORTCUTS = [
@@ -716,32 +730,27 @@ const SHORTCUTS = [
 	{ keys: ["?"], action: "Show keyboard shortcuts" },
 	{ keys: ["Esc"], action: "Close panel / dismiss modal" },
 	{ keys: ["←", "→"], action: "Switch board view" },
-	{ keys: ["Ctrl", "K"], action: "Quick search (coming soon)" },
-];
+	{ keys: ["Ctrl", "K"], action: "Open command palette" },
+	];
+	
+	const BOARD_VIEWS = [
+		{ value: "board", label: "Board", icon: "board" },
+		{ value: "list", label: "List", icon: "menu" },
+		{ value: "timeline", label: "Timeline", icon: "activity" },
+		{ value: "whiteboard", label: "Whiteboard", icon: "whiteboard" },
+	];
 
 function ShortcutsModal({ onClose }) {
-	useEffect(() => {
-		const h = (e) => { if (e.key === "Escape") onClose(); };
-		window.addEventListener("keydown", h);
-		return () => window.removeEventListener("keydown", h);
-	}, [onClose]);
-
-	return (
-		<div
-			style={{
-				position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)",
-				zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center",
-			}}
-			onClick={onClose}
-		>
-			<div
-				className="card fade-in"
-				style={{ padding: 28, minWidth: 380, maxWidth: 460 }}
-				onClick={(e) => e.stopPropagation()}
-			>
+return (
+<ModalShell
+	onClose={onClose}
+	maxWidth={440}
+	labelledBy="shortcuts-title"
+	style={{ padding: 28 }}
+>
 				<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-					<h2 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: "var(--text-primary)" }}>Keyboard shortcuts</h2>
-					<button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
+					<h2 id="shortcuts-title" style={{ margin: 0, fontSize: 16, fontWeight: 600, color: "var(--text-primary)" }}>Keyboard shortcuts</h2>
+					<button type="button" className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close">
 						<Icon name="close" size={14} />
 					</button>
 				</div>
@@ -770,11 +779,10 @@ function ShortcutsModal({ onClose }) {
 				</div>
 				<p style={{ margin: "20px 0 0", fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>
 					Press <kbd style={{ padding: "1px 5px", background: "var(--bg-surface-3)", border: "1px solid var(--border-default)", borderRadius: 4, fontSize: 11 }}>Esc</kbd> to close
-				</p>
-			</div>
-		</div>
-	);
-}
+					</p>
+					</ModalShell>
+					);
+					}
 
 export default function BoardPage() {
 
@@ -791,6 +799,9 @@ export default function BoardPage() {
 	const [creatingColumn, setCreatingColumn] = useState(false);
 	const [columnError, setColumnError] = useState("");
 	const [showShortcuts, setShowShortcuts] = useState(false);
+	const firstColumnIdRef = useRef(null);
+	const paneRef = useRef(null);
+	const [mobileColumn, setMobileColumn] = useState(0);
 
 	// Filters
 	const [filterAssignee, setFilterAssignee] = useState("");
@@ -798,6 +809,16 @@ export default function BoardPage() {
 	const [filterDue, setFilterDue] = useState(""); // "overdue", "today", "week"
 	const hasFilters = Boolean(filterAssignee || filterPriority || filterDue);
 
+	// Phones show one column at a time; keep the position dots in sync (UI.md §19.2)
+	useEffect(() => {
+		if (activeView !== "board" || status !== "ready") return undefined;
+		const container = paneRef.current?.querySelector(".board-columns-container");
+		if (!container) return undefined;
+		const onScroll = () => setMobileColumn(Math.round(container.scrollLeft / Math.max(container.clientWidth, 1)));
+		container.addEventListener("scroll", onScroll, { passive: true });
+		return () => container.removeEventListener("scroll", onScroll);
+	}, [activeView, status]);
+	
 	// Global keyboard shortcuts
 	useEffect(() => {
 		const handler = (e) => {
@@ -809,10 +830,24 @@ export default function BoardPage() {
 				setShowShortcuts((s) => !s);
 			}
 			if (e.key === "Escape") {
-				setShowShortcuts(false);
-				setSelectedTask(null);
+			setShowShortcuts(false);
+			setSelectedTask(null);
 			}
-		};
+			if (e.ctrlKey || e.metaKey || e.altKey) return;
+			if ((e.key === "c" || e.key === "C") && firstColumnIdRef.current) {
+				e.preventDefault();
+				setActiveView("board");
+				setTaskError("");
+				setTaskForm({ columnId: firstColumnIdRef.current, title: "", description: "", priority: "medium" });
+			}
+			if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+				const step = e.key === "ArrowRight" ? 1 : -1;
+				setActiveView((view) => {
+					const index = BOARD_VIEWS.findIndex((v) => v.value === view);
+					return BOARD_VIEWS[(index + step + BOARD_VIEWS.length) % BOARD_VIEWS.length].value;
+				});
+			}
+			};
 		window.addEventListener("keydown", handler);
 		return () => window.removeEventListener("keydown", handler);
 	}, []);
@@ -1072,6 +1107,7 @@ export default function BoardPage() {
 	}, [workspaceId]);
 
 	const columns = useMemo(() => [...(board?.columns || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), [board]);
+	firstColumnIdRef.current = columns[0]?._id?.toString() || null;
 
 	// Derive all unique assignees from board tasks (for filter dropdown)
 	const boardMembers = useMemo(() => {
@@ -1193,50 +1229,12 @@ export default function BoardPage() {
 					</div>
 				</div>
 				<div className="board-view-tabs">
-					<button
-						type="button"
-						onClick={() => setActiveView("board")}
-						className={`tab-button${activeView === "board" ? " active" : ""}`}
-					>
-						<Icon
-							name="board"
-							size={15}
-						/>{" "}
-						Board
-					</button>
-					<button
-						type="button"
-						onClick={() => setActiveView("list")}
-						className={`tab-button${activeView === "list" ? " active" : ""}`}
-					>
-						<Icon
-							name="menu"
-							size={15}
-						/>{" "}
-						List
-					</button>
-					<button
-						type="button"
-						onClick={() => setActiveView("timeline")}
-						className={`tab-button${activeView === "timeline" ? " active" : ""}`}
-					>
-						<Icon
-							name="activity"
-							size={15}
-						/>{" "}
-						Timeline
-					</button>
-					<button
-						type="button"
-						onClick={() => setActiveView("whiteboard")}
-						className={`tab-button${activeView === "whiteboard" ? " active" : ""}`}
-					>
-						<Icon
-							name="whiteboard"
-							size={15}
-						/>{" "}
-						Whiteboard
-					</button>
+				<SegmentedTabs
+					id="board-view"
+					items={BOARD_VIEWS}
+					value={activeView}
+					onChange={setActiveView}
+				/>
 				</div>
 				<div className="board-filters">
 					<span>Filters:</span>
@@ -1288,8 +1286,34 @@ export default function BoardPage() {
 			</div>
 
 			<div className={`board-layout${showPanel ? " has-panel" : ""}`}>
-				<div className={`board-pane${showPanel ? " compact" : ""}`}>
-					{activeView === "board" && (
+				<div
+					ref={paneRef}
+					className={`board-pane${showPanel ? " compact" : ""}`}
+				>
+				{/* Opacity-only crossfade: a transform here would break dnd's fixed-position dragging */}
+				<motion.div
+					key={activeView}
+					initial={{ opacity: 0 }}
+					animate={{ opacity: 1 }}
+					transition={{ duration: 0.25, ease: EASE_OUT }}
+				>
+				{activeView === "board" && (
+					<div className="column-dots" aria-hidden>
+						{filteredColumns.map((column, index) => (
+							<button
+								key={column._id}
+								type="button"
+								tabIndex={-1}
+								className={`column-dot${index === mobileColumn ? " active" : ""}`}
+								onClick={() => {
+									const container = paneRef.current?.querySelector(".board-columns-container");
+									container?.scrollTo({ left: index * container.clientWidth, behavior: "smooth" });
+								}}
+							/>
+						))}
+					</div>
+				)}
+				{activeView === "board" && (
 						<DragDropContext onDragEnd={handleDragEnd}>
 							<Droppable
 								droppableId="columns"
@@ -1331,10 +1355,10 @@ export default function BoardPage() {
 																	{column.title}
 																</h2>
 																<span
-																	className="badge"
-																	style={{ background: "rgba(255,255,255,0.06)", color: theme.accent }}
+																className="badge"
+																style={{ background: "rgba(255,255,255,0.06)", color: theme.accent }}
 																>
-																	{tasks.length}
+																<FlipNumber value={tasks.length} />
 																</span>
 															</div>
 															<Droppable
@@ -1585,13 +1609,15 @@ export default function BoardPage() {
 					)}
 					{activeView === "whiteboard" && (
 						<Whiteboard
-							workspaceId={workspaceId}
-							boardId={boardId}
+						workspaceId={workspaceId}
+						boardId={boardId}
 						/>
-					)}
-				</div>
-				{showPanel && selectedTask && (
-					<TaskPanel
+						)}
+						</motion.div>
+						</div>
+						<AnimatePresence mode="wait">
+						{showPanel && selectedTask && (
+						<TaskPanel
 						key={selectedTask.task?._id}
 						task={selectedTask.task}
 						column={selectedTask.column}
@@ -1610,9 +1636,11 @@ export default function BoardPage() {
 						workspaceMembers={workspaceMembers}
 						workspaceId={workspaceId}
 						boardId={boardId}
-					/>
-				)}
-			</div>
-		</section>
-	);
-}
+						/>
+						)}
+						</AnimatePresence>
+						</div>
+						<AnimatePresence>{showShortcuts && <ShortcutsModal key="shortcuts" onClose={() => setShowShortcuts(false)} />}</AnimatePresence>
+						</section>
+						);
+						}

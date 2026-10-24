@@ -1,8 +1,12 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { AnimatePresence, motion } from "framer-motion";
 import api from "../api/axios";
+import ModalShell from "../components/motion/ModalShell.jsx";
+import SpotlightCard from "../components/motion/SpotlightCard.jsx";
 import Icon from "../components/ui/Icon.jsx";
+import { fadeUp, SPRING, staggerContainer } from "../lib/motion";
 
 const WS_COLORS = ["#6C63FF", "#60A5FA", "#34D399", "#F87171", "#FBBF24", "#A78BFA", "#FB923C", "#F472B6"];
 
@@ -56,18 +60,17 @@ function CreateWorkspaceModal({ onClose, onCreated }) {
 	};
 
 	return (
-		<div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-			<div className="modal fade-in">
+		<ModalShell onClose={onClose} labelledBy="create-ws-title">
 				<div className="modal-header">
-					<h2 style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>Create workspace</h2>
-					<button type="button" onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4 }}><Icon name="close" size={18} /></button>
+					<h2 id="create-ws-title" style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>Create workspace</h2>
+					<button type="button" onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4, display: "flex" }}><Icon name="close" size={18} /></button>
 				</div>
 				<form onSubmit={handleSubmit}>
 					<div className="modal-body" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-						{error && <div style={{ background: "var(--danger-muted)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: "var(--radius-md)", padding: "8px 12px", fontSize: 13, color: "var(--danger)" }}>{error}</div>}
+						{error && <div className="message-error fade-in">{error}</div>}
 						<div>
 							<label style={{ display: "block", fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 6 }}>Workspace name</label>
-							<input value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} placeholder="My Team" required className="input" />
+							<input value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} placeholder="My Team" required autoFocus className="input" />
 						</div>
 						<div>
 							<label style={{ display: "block", fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 6 }}>Description <span style={{ color: "var(--text-muted)" }}>(optional)</span></label>
@@ -77,21 +80,25 @@ function CreateWorkspaceModal({ onClose, onCreated }) {
 							<label style={{ display: "block", fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 10 }}>Color</label>
 							<div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
 								{WS_COLORS.map((c) => (
-									<button
+									<motion.button
 										key={c}
 										type="button"
+										aria-label={`Color ${c}`}
+										aria-pressed={form.color === c}
 										onClick={() => setForm((p) => ({ ...p, color: c }))}
-										style={{
-											width: 28, height: 28,
-											borderRadius: "50%",
-											background: c,
-											border: form.color === c ? "3px solid #fff" : "3px solid transparent",
-											outline: form.color === c ? `2px solid ${c}` : "none",
-											cursor: "pointer",
-											padding: 0,
-											transition: "outline 0.15s",
-										}}
-									/>
+										whileHover={{ scale: 1.12 }}
+										whileTap={{ scale: 0.92 }}
+										transition={SPRING}
+										style={{ position: "relative", width: 28, height: 28, borderRadius: "50%", background: c, border: "none", cursor: "pointer", padding: 0 }}
+									>
+										{form.color === c && (
+											<motion.span
+												layoutId="ws-color-ring"
+												transition={SPRING}
+												style={{ position: "absolute", inset: -4, borderRadius: "50%", border: `2px solid ${c}` }}
+											/>
+										)}
+									</motion.button>
 								))}
 							</div>
 						</div>
@@ -103,10 +110,9 @@ function CreateWorkspaceModal({ onClose, onCreated }) {
 						</button>
 					</div>
 				</form>
-			</div>
-		</div>
-	);
-}
+				</ModalShell>
+				);
+				}
 
 export default function WorkspaceList() {
 	const [workspaces, setWorkspaces] = useState([]);
@@ -124,17 +130,17 @@ export default function WorkspaceList() {
 	}, []);
 
 	return (
-		<div className="fade-in">
+		<div>
 			{/* Header */}
 			<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
 				<div>
-					<h1 style={{ fontSize: 20, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>Your Workspaces</h1>
+					<h1 className="page-title fade-in">Your Workspaces</h1>
 					<p style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 4 }}>
 						{status === "ready" ? `${workspaces.length} workspace${workspaces.length !== 1 ? "s" : ""}` : ""}
 					</p>
 				</div>
 				<button type="button" onClick={() => setShowCreate(true)} className="btn btn-primary" style={{ fontSize: 13 }}>
-					+ New Workspace
+					<Icon name="plus" size={14} /> New Workspace
 				</button>
 			</div>
 
@@ -154,8 +160,8 @@ export default function WorkspaceList() {
 
 			{/* Empty state */}
 			{status === "ready" && workspaces.length === 0 && (
-				<div style={{ textAlign: "center", padding: "64px 24px", color: "var(--text-secondary)" }}>
-					<div className="icon-box icon-box-accent empty-state-icon"><Icon name="briefcase" size={24} /></div>
+				<div className="fade-in" style={{ textAlign: "center", padding: "64px 24px", color: "var(--text-secondary)" }}>
+					<div className="icon-box icon-box-accent empty-state-icon empty-float"><Icon name="briefcase" size={24} /></div>
 					<h2 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-primary)", marginBottom: 8 }}>No workspaces yet</h2>
 					<p style={{ fontSize: 14, marginBottom: 24 }}>Create your first workspace to start collaborating with your team.</p>
 					<button type="button" onClick={() => setShowCreate(true)} className="btn btn-primary">Create workspace</button>
@@ -164,7 +170,12 @@ export default function WorkspaceList() {
 
 			{/* Grid */}
 			{workspaces.length > 0 && (
-				<div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16 }}>
+				<motion.div
+					style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16 }}
+					variants={staggerContainer(0.06)}
+					initial="hidden"
+					animate="show"
+				>
 					{workspaces.map((ws, i) => {
 						const color = WS_COLORS[i % WS_COLORS.length];
 						const isOwner = ws.isOwner;
@@ -175,11 +186,9 @@ export default function WorkspaceList() {
 								to={`/app/workspaces/${ws._id}`}
 								style={{ textDecoration: "none" }}
 							>
-								<div
-									className="card"
-									style={{ padding: 20, cursor: "pointer", transition: "transform 0.2s, box-shadow 0.2s" }}
-									onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-3px)"; e.currentTarget.style.boxShadow = "0 8px 32px rgba(0,0,0,0.5)"; }}
-									onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "var(--shadow-card)"; }}
+								<SpotlightCard
+									variants={fadeUp}
+									style={{ padding: 20, height: "100%" }}
 								>
 									<div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
 										<WorkspaceAvatar name={ws.name} color={color} />
@@ -221,21 +230,24 @@ export default function WorkspaceList() {
 										<span className={`badge ${isOwner ? "badge-accent" : "badge-muted"}`}>
 											{ws.currentUserRole || "member"}
 										</span>
-										<span style={{ fontSize: 12, color: "var(--accent)", fontWeight: 500 }}>Open</span>
-									</div>
-								</div>
-							</Link>
+										<span className="card-cta">Open <Icon name="arrowRight" size={12} /></span>
+										</div>
+										</SpotlightCard>
+										</Link>
 						);
 					})}
-				</div>
-			)}
-
-			{showCreate && (
-				<CreateWorkspaceModal
-					onClose={() => setShowCreate(false)}
-					onCreated={(ws) => { setWorkspaces((prev) => [ws, ...prev]); setShowCreate(false); }}
-				/>
-			)}
+					</motion.div>
+					)}
+					
+					<AnimatePresence>
+						{showCreate && (
+							<CreateWorkspaceModal
+								key="create-ws"
+								onClose={() => setShowCreate(false)}
+								onCreated={(ws) => { setWorkspaces((prev) => [ws, ...prev]); setShowCreate(false); }}
+							/>
+						)}
+					</AnimatePresence>
 		</div>
 	);
 }

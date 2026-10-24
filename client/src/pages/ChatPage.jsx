@@ -3,8 +3,12 @@ import { createPortal } from "react-dom";
 import { useParams, useSearchParams, useOutletContext } from "react-router-dom";
 import data from "@emoji-mart/data";
 import Picker from "@emoji-mart/react";
+import { AnimatePresence, motion } from "framer-motion";
+import { useMediaQuery } from "usehooks-ts";
 import api from "../api/axios";
+import FlipNumber from "../components/motion/FlipNumber.jsx";
 import Icon from "../components/ui/Icon.jsx";
+import { DURATION, EASE_IN, EASE_OUT, EASE_SPRING, fadeUp, MOBILE_QUERY, popover, SPRING_SOFT } from "../lib/motion";
 import { useToast } from "../hooks/useToast.jsx";
 import { getSocket } from "../socket";
 import useAuthStore from "../store/authStore";
@@ -86,12 +90,30 @@ const fmtDate = (iso) => {
 	return d.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
 };
 
+const ELLIPSIS = { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };
 
 function isSameMinute(a, b) {
 	const da = new Date(a);
 	const db = new Date(b);
 	return da.getFullYear() === db.getFullYear() && da.getMonth() === db.getMonth() && da.getDate() === db.getDate() && da.getHours() === db.getHours() && da.getMinutes() === db.getMinutes();
 }
+
+/* How a message row should mount:
+   - null      part of a fetched history batch: render in place, no animation
+   - "enter"   a live arrival (someone else's message, or our optimistic send)
+   - "confirm" the server echo of our own send. It replaces the optimistic copy under a
+               new id, so it continues from that copy's dimmed state instead of
+               animating in a second time. */
+function getArrival(msg, loadedIds, currentUser) {
+	if (loadedIds.has(msg._id)) return null;
+	if (!msg.isOptimistic && msg.sender?._id === currentUser?._id) return "confirm";
+	return "enter";
+}
+
+const ARRIVAL_INITIAL = {
+	enter: { opacity: 0, y: 8 },
+	confirm: { opacity: 0.75, y: 0 },
+};
 
 /* ── Avatar ───────────────────────────────────────────────────── */
 function MsgAvatar({ sender, visible }) {
@@ -106,27 +128,50 @@ function MsgAvatar({ sender, visible }) {
 }
 
 /* ── Reaction pill ────────────────────────────────────────────── */
+// Always mounted (even when empty) so AnimatePresence can tell a freshly added pill
+// from the ones that came with the message — only the former pops in.
 function Reactions({ reactions = [], currentUserId, onReact }) {
-	if (!reactions.length) return null;
 	return (
-		<div className="chat-reactions">
-			{reactions.map((r) => {
-				const isMine = r.users?.includes(currentUserId);
-				return (
-					<button
-						key={r.emoji}
-						type="button"
-						className={`chat-reaction${isMine ? " mine" : ""}`}
-						onClick={() => onReact(r.emoji)}
-						title={isMine ? "Remove reaction" : "Add reaction"}
-					>
-						<span>{r.emoji}</span>
-						<span className="chat-reaction-count">{r.users?.length || 0}</span>
-					</button>
-				);
-			})}
+		<div
+			className="chat-reactions"
+			style={reactions.length ? undefined : { marginTop: 0 }}
+		>
+			<AnimatePresence initial={false}>
+				{reactions.map((r) => {
+					const isMine = r.users?.includes(currentUserId);
+					return (
+						<motion.button
+							key={r.emoji}
+							type="button"
+							className={`chat-reaction${isMine ? " mine" : ""}`}
+							onClick={() => onReact(r.emoji)}
+							title={isMine ? "Remove reaction" : "Add reaction"}
+							// .chat-reaction transitions `all`; keep CSS off transform so it doesn't fight framer
+							style={{ transitionProperty: "background-color, border-color, color" }}
+							initial={{ opacity: 0, scale: 0.6 }}
+							animate={{ opacity: 1, scale: 1, transition: { duration: 0.3, ease: EASE_SPRING } }}
+							exit={{ opacity: 0, scale: 0.6, transition: { duration: 0.12, ease: EASE_IN } }}
+							whileTap={{ scale: 0.9 }}
+						>
+							<span>{r.emoji}</span>
+							<span className="chat-reaction-count">
+								<FlipNumber
+									value={r.users?.length || 0}
+									max={Infinity}
+								/>
+							</span>
+						</motion.button>
+					);
+				})}
+			</AnimatePresence>
 		</div>
 	);
+}
+
+/* Portal to <body> as a component, so it can sit inside AnimatePresence and still
+   receive the exit animation (presence context flows through portals). */
+function BodyPortal({ children }) {
+	return createPortal(children, document.body);
 }
 
 /* ── Emoji picker ─────────────────────────────────────────────── */
@@ -161,7 +206,7 @@ function EmojiPicker({ onPick, onClose }) {
 }
 
 /* ── Message row ──────────────────────────────────────────────── */
-function MessageRow({ msg, prevMsg, currentUser, onReact, onReply, onDelete, onEdit, threadCount }) {
+function MessageRow({ msg, prevMsg, currentUser, onReact, onReply, onDelete, onEdit, threadCount, arrival = null }) {
 	const [emojiOpen, setEmojiOpen] = useState(false);
 	const [pickerCoords, setPickerCoords] = useState(null);
 	const [menuCoords, setMenuCoords] = useState(null);
@@ -208,14 +253,19 @@ function MessageRow({ msg, prevMsg, currentUser, onReact, onReply, onDelete, onE
 			// Default to opening directly to the RIGHT of the button
 			let left = rect.right + 8;
 			let top = rect.top;
-			
+			let origin = "top left";
+
 			// Horizontal boundary: If it overflows the right side of the screen
 			if (left + pickerWidth > window.innerWidth - 8) {
 				// Flip it to the LEFT of the button
 				left = rect.left - pickerWidth - 8;
-				
+				origin = "top right";
+
 				// Absolute screen edge fallback
-				if (left < 8) left = 8;
+				if (left < 8) {
+					left = 8;
+					origin = "top center";
+				}
 			}
 			
 			// Vertical boundary: Ensure it fully fits on the screen
@@ -224,13 +274,20 @@ function MessageRow({ msg, prevMsg, currentUser, onReact, onReply, onDelete, onE
 			}
 			if (top < 8) top = 8;
 
-			setPickerCoords({ top, left });
+			setPickerCoords({ top, left, origin });
 			setEmojiOpen(true);
 		}
 	};
 
 	return (
-		<div className={`chat-msg-group${showHeader ? " first-in-group" : ""}${emojiOpen ? " has-picker-open" : ""}${isOwn ? " own-message" : ""}`}>
+		<motion.div
+			className={`chat-msg-group${showHeader ? " first-in-group" : ""}${emojiOpen ? " has-picker-open" : ""}${isOwn ? " own-message" : ""}`}
+			// Only live arrivals animate; history renders in place. Optimistic sends sit
+			// slightly dimmed until the server echo replaces them (UI.md §18.5).
+			initial={ARRIVAL_INITIAL[arrival] || false}
+			animate={{ opacity: msg.isOptimistic ? 0.75 : 1, y: 0 }}
+			transition={{ duration: 0.25, ease: EASE_OUT }}
+		>
 			<MsgAvatar sender={msg.sender} visible={showHeader} />
 
 			<div className="chat-msg-body">
@@ -295,85 +352,124 @@ function MessageRow({ msg, prevMsg, currentUser, onReact, onReply, onDelete, onE
 			)}
 
 			{/* 4-Options Menu Portal */}
-			{menuCoords && createPortal(
-				<div 
-					className="chat-msg-actions-popup"
-					style={{ 
-						position: "fixed", 
-						top: menuCoords.y, 
-						left: menuCoords.x, 
-						zIndex: 99999,
-						background: "var(--bg-surface-1)",
-						border: "1px solid var(--border-default)",
-						borderRadius: "8px",
-						boxShadow: "0 10px 40px rgba(0,0,0,0.6)",
-						display: "flex",
-						padding: "4px",
-						gap: "4px"
-					}}
-					onClick={(e) => e.stopPropagation()}
-				>
-					<button type="button" className="chat-action-btn" title="Add reaction" onClick={(e) => toggleEmoji(e)}>
-						😊
-					</button>
-					<button type="button" className="chat-action-btn" title="Reply in thread" onClick={() => { onReply(msg); setMenuCoords(null); }}>
-						<Icon name="chat" size={13} />
-					</button>
-					{isOwn && (
-						<>
-							<button type="button" className="chat-action-btn" title="Edit message" onClick={() => { setIsEditing(true); setEditContent(msg.content); setMenuCoords(null); }}>
-								<Icon name="pencil" size={13} />
+			<AnimatePresence>
+				{menuCoords && (
+					<BodyPortal key="msg-menu">
+						<motion.div
+							className="chat-msg-actions-popup"
+							style={{
+								position: "fixed",
+								top: menuCoords.y,
+								left: menuCoords.x,
+								zIndex: 99999,
+								background: "var(--bg-surface-1)",
+								border: "1px solid var(--border-default)",
+								borderRadius: "8px",
+								boxShadow: "0 10px 40px rgba(0,0,0,0.6)",
+								display: "flex",
+								padding: "4px",
+								gap: "4px",
+								transformOrigin: "top left",
+							}}
+							variants={popover}
+							initial="initial"
+							animate="animate"
+							exit="exit"
+							onClick={(e) => e.stopPropagation()}
+						>
+							<button type="button" className="chat-action-btn" title="Add reaction" onClick={(e) => toggleEmoji(e)}>
+								<Icon
+									name="smile"
+									size={13}
+								/>
 							</button>
-							<button type="button" className="chat-action-btn" title="Delete message" style={{ color: "var(--red)" }} onClick={() => { onDelete(msg._id); setMenuCoords(null); }}>
-								<Icon name="trash" size={13} />
+							<button type="button" className="chat-action-btn" title="Reply in thread" onClick={() => { onReply(msg); setMenuCoords(null); }}>
+								<Icon name="chat" size={13} />
 							</button>
-						</>
-					)}
-				</div>,
-				document.body
-			)}
+							{isOwn && (
+								<>
+									<button type="button" className="chat-action-btn" title="Edit message" onClick={() => { setIsEditing(true); setEditContent(msg.content); setMenuCoords(null); }}>
+										<Icon name="pencil" size={13} />
+									</button>
+									<button type="button" className="chat-action-btn" title="Delete message" style={{ color: "var(--red)" }} onClick={() => { onDelete(msg._id); setMenuCoords(null); }}>
+										<Icon name="trash" size={13} />
+									</button>
+								</>
+							)}
+						</motion.div>
+					</BodyPortal>
+				)}
+			</AnimatePresence>
 
 			{/* Render EmojiPicker via Portal in document.body so it is NEVER clipped by scrollable parents */}
-			{emojiOpen && pickerCoords && createPortal(
-				<div 
-					style={{ 
-						position: "fixed", 
-						top: pickerCoords.top, 
-						left: pickerCoords.left, 
-						zIndex: 99999 
-					}}
-				>
-					<EmojiPicker
-						onPick={(em) => {
-							onReact(msg._id, em);
-							setEmojiOpen(false);
-							setPickerCoords(null);
-						}}
-						onClose={() => {
-							setEmojiOpen(false);
-							setPickerCoords(null);
-						}}
-					/>
-				</div>,
-				document.body
-			)}
-		</div>
+			<AnimatePresence>
+				{emojiOpen && pickerCoords && (
+					<BodyPortal key="emoji-picker">
+						<motion.div
+							style={{
+								position: "fixed",
+								top: pickerCoords.top,
+								left: pickerCoords.left,
+								zIndex: 99999,
+								transformOrigin: pickerCoords.origin,
+							}}
+							variants={popover}
+							initial="initial"
+							animate="animate"
+							exit="exit"
+						>
+							<EmojiPicker
+								onPick={(em) => {
+									onReact(msg._id, em);
+									setEmojiOpen(false);
+									setPickerCoords(null);
+								}}
+								onClose={() => {
+									setEmojiOpen(false);
+									setPickerCoords(null);
+								}}
+							/>
+						</motion.div>
+					</BodyPortal>
+				)}
+			</AnimatePresence>
+		</motion.div>
 	);
 }
 
 /* ── Thread panel ─────────────────────────────────────────────── */
+const THREAD_PANEL_WIDTH = 360;
+
+// Desktop: grow the column so the channel narrows smoothly while the panel slides in (UI.md §18.4).
+const threadPanelDesktop = {
+	initial: { width: 0, opacity: 0 },
+	animate: { width: THREAD_PANEL_WIDTH, opacity: 1, transition: { duration: 0.25, ease: EASE_OUT } },
+	exit: { width: 0, opacity: 0, transition: { duration: DURATION.default, ease: EASE_IN } },
+};
+
+// Mobile: full-screen overlay pushed in from the right, like a navigation push.
+const threadPanelMobile = {
+	initial: { x: "100%" },
+	animate: { x: 0, transition: SPRING_SOFT },
+	exit: { x: "100%", transition: { duration: DURATION.default, ease: EASE_IN } },
+};
+
 function ThreadPanel({ parentMsg, currentUser, onClose }) {
 	const [replies, setReplies] = useState([]);
+	// Ids that arrived with the initial fetch; anything else is a live reply and animates in.
+	const [loadedReplyIds, setLoadedReplyIds] = useState(() => new Set());
 	const [input, setInput] = useState("");
 	const { workspaceId } = useParams();
 	const accessToken = useAuthStore((s) => s.accessToken);
 	const endRef = useRef(null);
+	const isMobile = useMediaQuery(MOBILE_QUERY);
 
 	useEffect(() => {
 		if (!parentMsg) return;
 		api.get(`/workspaces/${workspaceId}/messages?threadId=${parentMsg._id}&limit=100`)
 			.then((res) => {
 				setReplies(res.data.messages);
+				setLoadedReplyIds(new Set(res.data.messages.map((m) => m._id)));
 				setTimeout(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
 			})
 			.catch((err) => console.error("Failed to load thread replies:", err));
@@ -438,90 +534,127 @@ function ThreadPanel({ parentMsg, currentUser, onClose }) {
 	if (!parentMsg) return null;
 
 	return (
-		<div className="chat-thread-panel">
-			<div className="chat-thread-header">
-				<span style={{ fontWeight: 600, fontSize: 15, color: "var(--text-primary)" }}>Thread</span>
-				<button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
-					<Icon name="close" size={14} />
-				</button>
-			</div>
-
-			<div className="chat-thread-messages">
-				{/* Original message */}
-				<div style={{ paddingBottom: 12, borderBottom: "1px solid var(--border-subtle)", marginBottom: 12 }}>
-					<MessageRow
-						msg={parentMsg}
-						prevMsg={null}
-						currentUser={currentUser}
-						onReact={() => {}}
-						onReply={() => {}}
-						onDelete={() => {}}
-						threadCount={0}
-					/>
+		<motion.div
+			className="chat-thread-panel"
+			// Framer owns the entrance; switch off the CSS panelSlideIn keyframe.
+			style={{ animation: "none", overflow: "hidden" }}
+			variants={isMobile ? threadPanelMobile : threadPanelDesktop}
+			initial="initial"
+			animate="animate"
+			exit="exit"
+		>
+			{/* Fixed-width inner column: as the outer width grows the content slides in
+			    from the right instead of reflowing. */}
+			<div
+				style={{
+					width: isMobile ? "100%" : THREAD_PANEL_WIDTH,
+					flex: 1,
+					minHeight: 0,
+					display: "flex",
+					flexDirection: "column",
+				}}
+			>
+				<div className="chat-thread-header">
+					<span style={{ fontWeight: 600, fontSize: 15, color: "var(--text-primary)" }}>Thread</span>
+					<button
+						type="button"
+						className="btn btn-ghost btn-sm"
+						onClick={onClose}
+						aria-label="Close thread"
+					>
+						<Icon name="close" size={14} />
+					</button>
 				</div>
 
-				{replies.length === 0 && (
-					<p style={{ fontSize: 13, color: "var(--text-muted)", textAlign: "center", padding: "24px 0" }}>
-						No replies yet. Be the first to reply!
-					</p>
-				)}
-				{replies.map((r, i) => (
-					<MessageRow
-						key={r._id}
-						msg={r}
-						prevMsg={replies[i - 1] || null}
-						currentUser={currentUser}
-						onReact={() => {}}
-						onReply={() => {}}
-						onDelete={() => {}}
-						threadCount={0}
-					/>
-				))}
-				<div ref={endRef} />
-			</div>
+				<div className="chat-thread-messages">
+					{/* Original message */}
+					<div style={{ paddingBottom: 12, borderBottom: "1px solid var(--border-subtle)", marginBottom: 12 }}>
+						<MessageRow
+							msg={parentMsg}
+							prevMsg={null}
+							currentUser={currentUser}
+							onReact={() => {}}
+							onReply={() => {}}
+							onDelete={() => {}}
+							threadCount={0}
+						/>
+					</div>
 
-			<div className="chat-input-area">
-				<div className="chat-input-box">
-					<textarea
-						className="chat-input-textarea"
-						value={input}
-						onChange={(e) => setInput(e.target.value)}
-						onKeyDown={handleKey}
-						placeholder="Reply in thread..."
-						rows={2}
-					/>
-					<div className="chat-input-footer">
-						<span className="chat-input-hint">Enter to send</span>
-						<button
-							type="button"
-							onClick={send}
-							disabled={!input.trim()}
-							className="btn btn-primary btn-sm"
-							style={{ padding: "0 10px" }}
-						>
-							<Icon name="send" size={13} />
-						</button>
+					{replies.length === 0 && (
+						<p style={{ fontSize: 13, color: "var(--text-muted)", textAlign: "center", padding: "24px 0" }}>
+							No replies yet. Be the first to reply!
+						</p>
+					)}
+					{replies.map((r, i) => (
+						<MessageRow
+							key={r._id}
+							msg={r}
+							prevMsg={replies[i - 1] || null}
+							currentUser={currentUser}
+							onReact={() => {}}
+							onReply={() => {}}
+							onDelete={() => {}}
+							threadCount={0}
+							arrival={getArrival(r, loadedReplyIds, currentUser)}
+						/>
+					))}
+					<div ref={endRef} />
+				</div>
+
+				<div className="chat-input-area">
+					<div className="chat-input-box">
+						<textarea
+							className="chat-input-textarea"
+							value={input}
+							onChange={(e) => setInput(e.target.value)}
+							onKeyDown={handleKey}
+							placeholder="Reply in thread..."
+							rows={2}
+						/>
+						<div className="chat-input-footer">
+							<span className="chat-input-hint">Enter to send</span>
+							<button
+								type="button"
+								onClick={send}
+								disabled={!input.trim()}
+								className="btn btn-primary btn-sm"
+								style={{ padding: "0 10px" }}
+							>
+								<Icon name="send" size={13} />
+							</button>
+						</div>
 					</div>
 				</div>
 			</div>
-		</div>
+		</motion.div>
 	);
 }
 
 /* ── Typing dots ──────────────────────────────────────────────── */
+// Height animates too, so the message list eases up instead of jumping by a row.
 function TypingDots({ names }) {
 	if (!names.length) return null;
 	return (
-		<div style={{ padding: "2px 20px 6px", display: "flex", alignItems: "center", gap: 8 }}>
-			<div className="typing-dots">
-				<span />
-				<span />
-				<span />
+		<motion.div
+			style={{ overflow: "hidden", flexShrink: 0 }}
+			initial={{ height: 0, opacity: 0 }}
+			animate={{ height: "auto", opacity: 1, transition: { duration: DURATION.default, ease: EASE_OUT } }}
+			exit={{ height: 0, opacity: 0, transition: { duration: 0.15, ease: EASE_IN } }}
+		>
+			<div style={{ padding: "2px 20px 6px", display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+				<div
+					className="typing-dots"
+					style={{ flexShrink: 0 }}
+				>
+					<span />
+					<span />
+					<span />
+				</div>
+				<span style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic", ...ELLIPSIS }}>
+					{names.join(", ")} {names.length === 1 ? "is" : "are"} typing…
+				</span>
 			</div>
-			<span style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
-				{names.join(", ")} {names.length === 1 ? "is" : "are"} typing…
-			</span>
-		</div>
+		</motion.div>
 	);
 }
 
@@ -546,6 +679,10 @@ export default function ChatPage() {
 	const [typingUsers, setTypingUsers] = useState({});
 	const [loadingMore, setLoadingMore] = useState(false);
 	const [threadMsg, setThreadMsg] = useState(null);
+	// Ids delivered by history fetches (initial page + "load older"). Those render in
+	// place; only messages that show up afterwards get the arrival animation.
+	const [loadedIds, setLoadedIds] = useState(() => new Set());
+	const isMobile = useMediaQuery(MOBILE_QUERY);
 
 	const dmUser = useMemo(() => {
 		if (!workspace?.members || !currentUser) return null;
@@ -580,6 +717,7 @@ export default function ChatPage() {
 			api.get(url).then(({ data }) => {
 				if (!active) return;
 				setMessages(data.messages);
+				setLoadedIds(new Set(data.messages.map((m) => m._id)));
 				setActiveChannel(data.channel);
 				setHasMore(data.hasMore);
 				setNextCursor(data.nextCursor);
@@ -820,6 +958,7 @@ export default function ChatPage() {
 			const url = activeChannel?._id ? `/workspaces/${workspaceId}/messages?limit=60&channelId=${activeChannel._id}&before=${nextCursor}` : `/workspaces/${workspaceId}/messages?limit=60&before=${nextCursor}`;
 			const { data } = await api.get(url);
 			setMessages((prev) => [...data.messages, ...prev]);
+			setLoadedIds((prev) => new Set([...prev, ...data.messages.map((m) => m._id)]));
 			setHasMore(data.hasMore);
 			setNextCursor(data.nextCursor);
 		} catch {
@@ -852,16 +991,39 @@ export default function ChatPage() {
 			<div className="chat-main">
 				{/* Header */}
 				<div className="chat-header">
-					<div className="chat-header-left">
-						<span style={{ fontSize: 18, color: "var(--text-muted)", display: "flex", alignItems: "center" }}>
+					<div
+						className="chat-header-left"
+						style={{ flex: 1, minWidth: 0 }}
+					>
+						<span style={{ fontSize: 18, color: "var(--text-muted)", display: "flex", alignItems: "center", flexShrink: 0 }}>
 							{dmUser ? <Icon name="user" size={18} /> : activeChannel?.isPrivate ? <Icon name="lock" size={16} /> : "#"}
 						</span>
-						<div>
-							<div className="chat-header-name">{dmUser ? dmUser.name : (activeChannel?.name || "...")}</div>
-							<div className="chat-header-desc">{dmUser ? "Direct Message" : (activeChannel?.description || "All workspace members")}</div>
-						</div>
+						{/* Keyed on the conversation so switching channels/DMs eases the title in */}
+						<motion.div
+							key={activeChannel?._id || "loading"}
+							style={{ minWidth: 0 }}
+							initial={{ opacity: 0, y: 4 }}
+							animate={{ opacity: 1, y: 0 }}
+							transition={{ duration: DURATION.default, ease: EASE_OUT }}
+						>
+							<div
+								className="chat-header-name"
+								style={ELLIPSIS}
+							>
+								{dmUser ? dmUser.name : (activeChannel?.name || "...")}
+							</div>
+							<div
+								className="chat-header-desc"
+								style={ELLIPSIS}
+							>
+								{dmUser ? "Direct Message" : (activeChannel?.description || "All workspace members")}
+							</div>
+						</motion.div>
 					</div>
-					<div className="chat-header-right">
+					<div
+						className="chat-header-right"
+						style={{ flexShrink: 0, marginLeft: 12 }}
+					>
 						<div
 							style={{
 								display: "flex",
@@ -873,7 +1035,10 @@ export default function ChatPage() {
 								padding: "3px 10px",
 							}}
 						>
-							<div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--green)" }} />
+							<div
+								className="lp-live-dot"
+								style={{ width: 6, height: 6 }}
+							/>
 							<span style={{ fontSize: 12, fontWeight: 600, color: "var(--green)" }}>Live</span>
 						</div>
 					</div>
@@ -916,15 +1081,20 @@ export default function ChatPage() {
 							)}
 
 							{messages.length === 0 && (
-								<div className="empty-state">
-									<div className="icon-box icon-box-accent empty-state-icon">
+								<motion.div
+									className="empty-state"
+									variants={fadeUp}
+									initial="hidden"
+									animate="show"
+								>
+									<div className="icon-box icon-box-accent empty-state-icon empty-float">
 										<Icon name="chat" size={24} />
 									</div>
 									<p style={{ fontSize: 15, fontWeight: 500, color: "var(--text-primary)", marginBottom: 6 }}>
 										No messages yet
 									</p>
 									<p>Be the first to say hello! 👋</p>
-								</div>
+								</motion.div>
 							)}
 
 							{grouped.map((group) => (
@@ -943,6 +1113,7 @@ export default function ChatPage() {
 											onDelete={handleDelete}
 											onEdit={handleEdit}
 											threadCount={msg.threadCount || 0}
+											arrival={getArrival(msg, loadedIds, currentUser)}
 										/>
 									))}
 								</div>
@@ -954,7 +1125,14 @@ export default function ChatPage() {
 				</div>
 
 				{/* Typing indicator */}
-				<TypingDots names={typingNames} />
+				<AnimatePresence initial={false}>
+					{typingNames.length > 0 && (
+						<TypingDots
+							key="typing"
+							names={typingNames}
+						/>
+					)}
+				</AnimatePresence>
 
 				{/* Input */}
 				<div className="chat-input-area">
@@ -976,15 +1154,22 @@ export default function ChatPage() {
 								placeholder={`Message ${activeChannel?.isPrivate ? "user" : "#" + (activeChannel?.name || "channel")}...`}
 							/>
 							<div className="chat-input-footer">
-								<span className="chat-input-hint">Enter to send · Shift+Enter for new line</span>
-								<button
+								<span
+									className="chat-input-hint"
+									style={{ ...ELLIPSIS, minWidth: 0, marginRight: 8 }}
+								>
+									Enter to send · Shift+Enter for new line
+								</span>
+								<motion.button
 									type="button"
 									onClick={handleSend}
 									disabled={!input.trim()}
 									aria-label="Send message"
+									whileTap={input.trim() ? { scale: 0.88 } : undefined}
 									style={{
-										width: 30,
-										height: 30,
+										flexShrink: 0,
+										width: isMobile ? 36 : 30,
+										height: isMobile ? 36 : 30,
 										borderRadius: "var(--r-md)",
 										background: input.trim() ? "var(--accent)" : "var(--bg-surface-3)",
 										border: "none",
@@ -993,14 +1178,15 @@ export default function ChatPage() {
 										alignItems: "center",
 										justifyContent: "center",
 										color: "#fff",
-										transition: "all var(--duration-fast) var(--ease-out)",
+										// Not `all`: transform belongs to framer (press feedback).
+										transition: "background-color var(--duration-fast) var(--ease-out)",
 									}}
 								>
 									<Icon
 										name="send"
 										size={14}
 									/>
-								</button>
+								</motion.button>
 							</div>
 						</div>
 					)}
@@ -1008,7 +1194,16 @@ export default function ChatPage() {
 			</div>
 
 			{/* Thread panel */}
-			{threadMsg && <ThreadPanel parentMsg={threadMsg} currentUser={currentUser} onClose={() => setThreadMsg(null)} />}
+			<AnimatePresence>
+				{threadMsg && (
+					<ThreadPanel
+						key="thread-panel"
+						parentMsg={threadMsg}
+						currentUser={currentUser}
+						onClose={() => setThreadMsg(null)}
+					/>
+				)}
+			</AnimatePresence>
 		</div>
 	);
 }

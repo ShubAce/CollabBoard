@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
 import api from "../api/axios";
 import Icon from "../components/ui/Icon.jsx";
+import { SPRING } from "../lib/motion";
 
 const WS_COLORS = ["#6C63FF", "#60A5FA", "#34D399", "#F87171", "#FBBF24", "#A78BFA", "#FB923C", "#F472B6"];
 
@@ -29,7 +31,7 @@ export default function CreateWorkspace() {
 	return (
 		<div className="fade-in" style={{ maxWidth: 520, margin: "0 auto" }}>
 			<div style={{ marginBottom: 24 }}>
-				<h1 style={{ fontSize: 20, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>Create workspace</h1>
+				<h1 className="page-title">Create workspace</h1>
 				<p style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 4 }}>Set up a shared space for your team.</p>
 			</div>
 
@@ -77,31 +79,32 @@ export default function CreateWorkspace() {
 						</label>
 						<div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
 							{WS_COLORS.map((c) => (
-								<button
+								<motion.button
 									key={c}
 									type="button"
+									aria-label={`Color ${c}`}
+									aria-pressed={form.color === c}
 									onClick={() => setForm((p) => ({ ...p, color: c }))}
-									style={{
-										width: 32,
-										height: 32,
-										borderRadius: "50%",
-										background: c,
-										border: form.color === c ? "3px solid #fff" : "3px solid transparent",
-										outline: form.color === c ? `2px solid ${c}` : "none",
-										outlineOffset: 1,
-										cursor: "pointer",
-										padding: 0,
-										transition: "outline 0.15s, transform 0.15s",
-										transform: form.color === c ? "scale(1.15)" : "scale(1)",
-									}}
-								/>
+									whileHover={{ scale: 1.12 }}
+									whileTap={{ scale: 0.92 }}
+									transition={SPRING}
+									style={{ position: "relative", width: 32, height: 32, borderRadius: "50%", background: c, border: "none", cursor: "pointer", padding: 0 }}
+								>
+									{form.color === c && (
+										<motion.span
+											layoutId="create-ws-color-ring"
+											transition={SPRING}
+											style={{ position: "absolute", inset: -5, borderRadius: "50%", border: `2px solid ${c}` }}
+										/>
+									)}
+								</motion.button>
 							))}
 						</div>
 					</div>
 
 					{/* Preview */}
 					<div style={{ background: "var(--bg-surface-2)", borderRadius: "var(--radius-md)", padding: 14, display: "flex", alignItems: "center", gap: 12 }}>
-						<div style={{ width: 40, height: 40, borderRadius: "var(--radius-md)", background: form.color + "22", border: `2px solid ${form.color}44`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 700, color: form.color }}>
+						<div style={{ width: 40, height: 40, borderRadius: "var(--radius-md)", background: form.color + "22", border: `2px solid ${form.color}44`, boxShadow: `0 0 24px ${form.color}33`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 700, color: form.color, transition: "background-color 300ms, border-color 300ms, color 300ms, box-shadow 300ms" }}>
 							{form.name.slice(0, 2).toUpperCase() || "WS"}
 						</div>
 						<div>

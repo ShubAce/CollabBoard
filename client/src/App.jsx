@@ -1,26 +1,29 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Navigate, Routes, Route } from "react-router-dom";
 import api, { refreshSession } from "./api/axios";
+import BootLoader from "./components/BootLoader.jsx";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
-import AppShell from "./pages/AppShell.jsx";
-import AuthCallbackPage from "./pages/AuthCallbackPage.jsx";
-import ActivityLogPage from "./pages/ActivityLogPage.jsx";
-import BoardList from "./pages/BoardList.jsx";
-import BoardPage from "./pages/BoardPage.jsx";
-import ChatPage from "./pages/ChatPage.jsx";
-import CreateWorkspace from "./pages/CreateWorkspace.jsx";
-import InviteAcceptPage from "./pages/InviteAcceptPage.jsx";
 import LandingPage from "./pages/LandingPage.jsx";
-import LoginPage from "./pages/LoginPage.jsx";
-import MyWorkPage from "./pages/MyWorkPage.jsx";
-import NotFoundPage from "./pages/NotFoundPage.jsx";
-import NotificationsPage from "./pages/NotificationsPage.jsx";
-import ProfilePage from "./pages/ProfilePage.jsx";
-import RegisterPage from "./pages/RegisterPage.jsx";
-import WorkspaceDashboard from "./pages/WorkspaceDashboard.jsx";
-import WorkspaceList from "./pages/WorkspaceList.jsx";
-import WorkspaceSettings from "./pages/WorkspaceSettings.jsx";
 import useAuthStore from "./store/authStore";
+
+// Everything past the landing page is code-split so first paint stays light.
+const AppShell = lazy(() => import("./pages/AppShell.jsx"));
+const AuthCallbackPage = lazy(() => import("./pages/AuthCallbackPage.jsx"));
+const ActivityLogPage = lazy(() => import("./pages/ActivityLogPage.jsx"));
+const BoardList = lazy(() => import("./pages/BoardList.jsx"));
+const BoardPage = lazy(() => import("./pages/BoardPage.jsx"));
+const ChatPage = lazy(() => import("./pages/ChatPage.jsx"));
+const CreateWorkspace = lazy(() => import("./pages/CreateWorkspace.jsx"));
+const InviteAcceptPage = lazy(() => import("./pages/InviteAcceptPage.jsx"));
+const LoginPage = lazy(() => import("./pages/LoginPage.jsx"));
+const MyWorkPage = lazy(() => import("./pages/MyWorkPage.jsx"));
+const NotFoundPage = lazy(() => import("./pages/NotFoundPage.jsx"));
+const NotificationsPage = lazy(() => import("./pages/NotificationsPage.jsx"));
+const ProfilePage = lazy(() => import("./pages/ProfilePage.jsx"));
+const RegisterPage = lazy(() => import("./pages/RegisterPage.jsx"));
+const WorkspaceDashboard = lazy(() => import("./pages/WorkspaceDashboard.jsx"));
+const WorkspaceList = lazy(() => import("./pages/WorkspaceList.jsx"));
+const WorkspaceSettings = lazy(() => import("./pages/WorkspaceSettings.jsx"));
 
 function App() {
 	const accessToken = useAuthStore((state) => state.accessToken);
@@ -74,92 +77,94 @@ function App() {
 
 	return (
 		<div className="min-h-screen bg-base text-primary font-sans">
-			<Routes>
-				<Route
-					path="/"
-					element={<LandingPage />}
-				/>
-				<Route
-					path="/login"
-					element={<LoginPage />}
-				/>
-				<Route
-					path="/register"
-					element={<RegisterPage />}
-				/>
-				<Route
-					path="/auth/callback"
-					element={<AuthCallbackPage />}
-				/>
-				<Route
-					path="/invite/accept"
-					element={<InviteAcceptPage />}
-				/>
-				<Route element={<ProtectedRoute />}>
+			<Suspense fallback={<BootLoader />}>
+				<Routes>
 					<Route
-						path="/app"
-						element={<AppShell />}
-					>
+						path="/"
+						element={<LandingPage />}
+					/>
+					<Route
+						path="/login"
+						element={<LoginPage />}
+					/>
+					<Route
+						path="/register"
+						element={<RegisterPage />}
+					/>
+					<Route
+						path="/auth/callback"
+						element={<AuthCallbackPage />}
+					/>
+					<Route
+						path="/invite/accept"
+						element={<InviteAcceptPage />}
+					/>
+					<Route element={<ProtectedRoute />}>
 						<Route
-							index
-							element={
-								<Navigate
-									to="workspaces"
-									replace
-								/>
-							}
-						/>
-						<Route
-							path="workspaces"
-							element={<WorkspaceList />}
-						/>
-						<Route
-							path="workspaces/new"
-							element={<CreateWorkspace />}
-						/>
-						<Route
-							path="workspaces/:workspaceId"
-							element={<WorkspaceDashboard />}
-						/>
-						<Route
-							path="workspaces/:workspaceId/boards"
-							element={<BoardList />}
-						/>
-						<Route
-							path="workspaces/:workspaceId/boards/:boardId"
-							element={<BoardPage />}
-						/>
-						<Route
-							path="workspaces/:workspaceId/activity"
-							element={<ActivityLogPage />}
-						/>
-						<Route
-							path="workspaces/:workspaceId/chat"
-							element={<ChatPage />}
-						/>
-						<Route
-							path="workspaces/:workspaceId/settings"
-							element={<WorkspaceSettings />}
-						/>
-						<Route
-							path="my-work"
-							element={<MyWorkPage />}
-						/>
-						<Route
-							path="notifications"
-							element={<NotificationsPage />}
-						/>
-						<Route
-							path="profile"
-							element={<ProfilePage />}
-						/>
+							path="/app"
+							element={<AppShell />}
+						>
+							<Route
+								index
+								element={
+									<Navigate
+										to="workspaces"
+										replace
+									/>
+								}
+							/>
+							<Route
+								path="workspaces"
+								element={<WorkspaceList />}
+							/>
+							<Route
+								path="workspaces/new"
+								element={<CreateWorkspace />}
+							/>
+							<Route
+								path="workspaces/:workspaceId"
+								element={<WorkspaceDashboard />}
+							/>
+							<Route
+								path="workspaces/:workspaceId/boards"
+								element={<BoardList />}
+							/>
+							<Route
+								path="workspaces/:workspaceId/boards/:boardId"
+								element={<BoardPage />}
+							/>
+							<Route
+								path="workspaces/:workspaceId/activity"
+								element={<ActivityLogPage />}
+							/>
+							<Route
+								path="workspaces/:workspaceId/chat"
+								element={<ChatPage />}
+							/>
+							<Route
+								path="workspaces/:workspaceId/settings"
+								element={<WorkspaceSettings />}
+							/>
+							<Route
+								path="my-work"
+								element={<MyWorkPage />}
+							/>
+							<Route
+								path="notifications"
+								element={<NotificationsPage />}
+							/>
+							<Route
+								path="profile"
+								element={<ProfilePage />}
+							/>
+						</Route>
 					</Route>
-				</Route>
-				<Route
-					path="*"
-					element={<NotFoundPage />}
-				/>
-			</Routes>
+					<Route
+						path="*"
+						element={<NotFoundPage />}
+					/>
+				</Routes>
+			</Suspense>
 		</div>
 	);
 }

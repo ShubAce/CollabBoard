@@ -1,4 +1,7 @@
-import { createContext, useCallback, useContext, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import Icon from "../components/ui/Icon.jsx";
+import { DURATION, EASE_IN, EASE_OUT } from "../lib/motion";
 
 const ToastCtx = createContext(null);
 
@@ -45,55 +48,72 @@ export function useToast() {
 	return ctx;
 }
 
-const TYPE_ICON = {
-	success: "✓",
-	error: "✕",
-	info: "ℹ",
-	warning: "⚠",
+const TYPE_META = {
+	success: { icon: "checkCircle", color: "var(--green)" },
+	error: { icon: "xCircle", color: "var(--red)" },
+	info: { icon: "info", color: "var(--blue)" },
+	warning: { icon: "alert", color: "var(--yellow)" },
 };
 
 function ToastContainer({ toasts, onDismiss }) {
-	if (!toasts.length) return null;
 	return (
-		<div className="toast-container">
-			{toasts.map((t) => (
-				<div key={t.id} className={`toast toast-${t.type}`} style={{ position: "relative", overflow: "hidden" }}>
-					<span
-						style={{
-							fontSize: 16,
-							flexShrink: 0,
-							color:
-								t.type === "success"
-									? "var(--green)"
-									: t.type === "error"
-										? "var(--red)"
-										: t.type === "warning"
-											? "var(--yellow)"
-											: "var(--blue)",
-						}}
-					>
-						{TYPE_ICON[t.type]}
-					</span>
-					<span style={{ flex: 1, fontSize: 14, lineHeight: 1.5 }}>{t.message}</span>
-					<button
-						type="button"
-						onClick={() => onDismiss(t.id)}
-						style={{
-							background: "transparent",
-							border: "none",
-							color: "var(--text-muted)",
-							cursor: "pointer",
-							padding: "2px 4px",
-							fontSize: 16,
-							flexShrink: 0,
-						}}
-						aria-label="Dismiss"
-					>
-						×
-					</button>
-					{t.duration > 0 && <div className="toast-progress" style={{ animationDuration: `${t.duration}ms`, background: t.type === "success" ? "var(--green)" : t.type === "error" ? "var(--red)" : t.type === "warning" ? "var(--yellow)" : "var(--blue)" }} />}
-				</div>
-			))}
+		<div
+			className="toast-container"
+			aria-live="polite"
+		>
+			<AnimatePresence
+				mode="popLayout"
+				initial={false}
+			>
+				{toasts.map((t) => {
+					const meta = TYPE_META[t.type] || TYPE_META.info;
+					return (
+						<motion.div
+							key={t.id}
+							layout
+							role="status"
+							className={`toast toast-${t.type}`}
+							style={{ position: "relative", overflow: "hidden" }}
+							initial={{ x: "120%", opacity: 0 }}
+							animate={{ x: 0, opacity: 1, transition: { duration: DURATION.default, ease: EASE_OUT } }}
+							exit={{ x: "120%", opacity: 0, transition: { duration: 0.15, ease: EASE_IN } }}
+						>
+							<span style={{ flexShrink: 0, color: meta.color, display: "flex", marginTop: 2 }}>
+								<Icon
+									name={meta.icon}
+									size={16}
+								/>
+							</span>
+							<span style={{ flex: 1, fontSize: 14, lineHeight: 1.5 }}>{t.message}</span>
+							<button
+								type="button"
+								onClick={() => onDismiss(t.id)}
+								style={{
+									background: "transparent",
+									border: "none",
+									color: "var(--text-muted)",
+									cursor: "pointer",
+									padding: 2,
+									display: "flex",
+									flexShrink: 0,
+								}}
+								aria-label="Dismiss"
+							>
+								<Icon
+									name="close"
+									size={14}
+								/>
+							</button>
+							{t.duration > 0 && (
+								<div
+									className="toast-progress"
+									style={{ animationDuration: `${t.duration}ms`, background: meta.color }}
+								/>
+							)}
+						</motion.div>
+					);
+				})}
+			</AnimatePresence>
 		</div>
 	);
 }

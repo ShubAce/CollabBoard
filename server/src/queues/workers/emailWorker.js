@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "../../config/env.js";
 import { connectDB } from "../../config/db.js";
 import cron from "node-cron";
 import emailQueue from "../emailQueue.js";

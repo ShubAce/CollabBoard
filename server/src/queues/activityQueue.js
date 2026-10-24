@@ -28,4 +28,8 @@ const activityQueue = process.env.REDIS_URL
 			},
 	  });
 
+// Bull re-emits its Redis clients' errors on the queue; without a listener a dropped
+// connection (routine on managed Redis) becomes an uncaught exception and kills the process.
+activityQueue.on("error", (err) => console.error(`[activity queue] ${err.message}`));
+
 export default activityQueue;

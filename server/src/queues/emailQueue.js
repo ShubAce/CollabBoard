@@ -28,4 +28,8 @@ const emailQueue = process.env.REDIS_URL
 			},
 	  });
 
+// Bull re-emits its Redis clients' errors on the queue; without a listener a dropped
+// connection (routine on managed Redis) becomes an uncaught exception and kills the process.
+emailQueue.on("error", (err) => console.error(`[email queue] ${err.message}`));
+
 export default emailQueue;

@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "../../config/env.js";
 import dns from "node:dns";
 dns.setDefaultResultOrder("ipv4first");
 

@@ -151,8 +151,31 @@ const buildInviteResponse = ({ invite, email, role, expiresAt, inviter, inviteUr
 		name: inviter.name,
 		email: inviter.email,
 	},
-	...(process.env.NODE_ENV !== "production" ? { inviteUrl } : {}),
+	// Only admins can call sendInvite/listPendingInvites, so the link is safe to return —
+	// it lets them share the invite by hand when email delivery is down.
+	inviteUrl,
 });
+
+// The email worker records Brevo's health under this key (emailWorker.js).
+const isEmailDeliveryDown = async () => {
+	try {
+		const status = JSON.parse((await redis.get("email:status")) || "null");
+		return status?.ok === false;
+	} catch {
+		return false;
+	}
+};
+
+const queueInviteEmail = async (payload) => {
+	if (await isEmailDeliveryDown()) return false;
+	try {
+		await emailQueue.add("send_workspace_invite", payload);
+		return true;
+	} catch (queueErr) {
+		console.error("Queue error in sendInvite email:", queueErr.message);
+		return false;
+	}
+};
 
 const emitNotification = (req, userId, notification) => {
 	const io = req.app.get("io");
@@ -264,22 +287,21 @@ export const sendInvite = async (req, res, next) => {
 				console.error("Notification error in sendInvite:", notificationErr.message);
 			}
 
-			try {
-				await emailQueue.add("send_workspace_invite", {
-					to: existingUser.email,
-					userName: existingUser.name || existingUser.email,
-					workspaceName: workspace.name,
-					inviterName: req.user.name,
-					inviteUrl,
-					role,
-				});
-			} catch (queueErr) {
-				console.error("Queue error in sendInvite existing user email:", queueErr.message);
-			}
+			const emailQueued = await queueInviteEmail({
+				to: existingUser.email,
+				userName: existingUser.name || existingUser.email,
+				workspaceName: workspace.name,
+				inviterName: req.user.name,
+				inviteUrl,
+				role,
+			});
 
 			return res.status(201).json({
-				message: `Invitation sent to ${email}`,
+				message: emailQueued
+					? `Invitation sent to ${email}`
+					: `Invitation sent to ${email} in CollabBoard — they'll see it in their notifications. (The email couldn't be sent: email delivery is unavailable.)`,
 				type: "existing_user_invite",
+				emailDelivery: emailQueued ? "queued" : "unavailable",
 				invite: buildInviteResponse({
 					invite,
 					email,
@@ -291,22 +313,21 @@ export const sendInvite = async (req, res, next) => {
 			});
 		}
 
-		try {
-			await emailQueue.add("send_workspace_invite", {
-				to: email,
-				userName: email,
-				workspaceName: workspace.name,
-				inviterName: req.user.name,
-				inviteUrl,
-				role,
-			});
-		} catch (queueErr) {
-			console.error("Queue error in sendInvite email:", queueErr.message);
-		}
+		const emailQueued = await queueInviteEmail({
+			to: email,
+			userName: email,
+			workspaceName: workspace.name,
+			inviterName: req.user.name,
+			inviteUrl,
+			role,
+		});
 
 		return res.status(201).json({
-			message: `Invitation sent to ${email}`,
+			message: emailQueued
+				? `Invitation sent to ${email}`
+				: `Invite created for ${email}, but the email couldn't be sent (email delivery is unavailable). Use "Copy link" under Pending invitations to share it.`,
 			type: "email_invite",
+			emailDelivery: emailQueued ? "queued" : "unavailable",
 			invite: buildInviteResponse({
 				invite,
 				email,
@@ -329,9 +350,11 @@ export const listPendingInvites = async (req, res, next) => {
 			expiresAt: { $gt: new Date() },
 		})
 			.populate("invitedBy", "name avatar email")
-			.sort({ createdAt: -1 });
+			.sort({ createdAt: -1 })
+			.lean();
 
-		return res.status(200).json({ invites });
+		// inviteUrl powers the "Copy link" button in Workspace Settings.
+		return res.status(200).json({ invites: invites.map((invite) => ({ ...invite, inviteUrl: buildInviteUrl(invite.token) })) });
 	} catch (err) {
 		return next(err);
 	}

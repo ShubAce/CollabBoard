@@ -300,7 +300,18 @@ export default function WorkspaceSettings() {
 		setInviteStatus("");
 		try {
 			const { data } = await api.post(`/workspaces/${workspaceId}/invite`, { email, role: inviteRole });
-			setInviteStatus(data.message || "Invite sent");
+			let message = data.message || "Invite sent";
+			// Email is down and they have no account to get an in-app notification:
+			// hand the admin the link so the invite still reaches them.
+			if (data.emailDelivery === "unavailable" && data.type === "email_invite" && data.invite?.inviteUrl) {
+				try {
+					await navigator.clipboard.writeText(data.invite.inviteUrl);
+					message = `Invite created for ${email}. Email delivery is unavailable, so the invite link was copied to your clipboard — share it with them.`;
+				} catch {
+					/* keep the server's message, which points to "Copy link" */
+				}
+			}
+			setInviteStatus(message);
 			setQuery("");
 			setResults([]);
 			if (data.invite) setPendingInvites((prev) => [data.invite, ...prev]);

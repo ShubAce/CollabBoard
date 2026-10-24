@@ -2,6 +2,7 @@ import "../../config/env.js";
 import { connectDB } from "../../config/db.js";
 import cron from "node-cron";
 import emailQueue from "../emailQueue.js";
+import redis from "../../config/redis.js";
 import Task from "../../models/Task.js";
 
 // ── DB Connection ─────────────────────────────────────────────────────────────
@@ -19,6 +20,43 @@ function sleep(ms) {
 const FROM_NAME  = "CollabBoard";
 const FROM_EMAIL = process.env.SMTP_USER; // no.reply.collabboard@gmail.com
 console.log(`[brevo] Sending from: ${FROM_NAME} <${FROM_EMAIL}>`);
+
+// The API server reads this key to tell inviters when email delivery is broken
+// (see sendInvite) instead of claiming "Invitation sent".
+const EMAIL_STATUS_KEY = "email:status";
+async function recordEmailStatus(ok, reason = null) {
+    try {
+        await redis.set(EMAIL_STATUS_KEY, JSON.stringify({ ok, reason, checkedAt: new Date().toISOString() }));
+    } catch (err) {
+        console.error(`[brevo] Could not record email status: ${err.message}`);
+    }
+}
+
+// 4xx (except 429) means the request itself is wrong — bad/disabled key, unverified
+// sender, invalid address. Retrying can't fix it, so fail the job immediately.
+class PermanentEmailError extends Error {}
+const isPermanentStatus = (status) => status >= 400 && status < 500 && status !== 429;
+
+// Fail loudly at boot instead of on the first email someone is waiting for.
+async function verifyBrevoKey() {
+    try {
+        const res = await fetch("https://api.brevo.com/v3/account", {
+            headers: { "api-key": process.env.BREVO_API_KEY, accept: "application/json" },
+        });
+        if (res.ok) {
+            console.log("[brevo] API key verified.");
+            await recordEmailStatus(true);
+            return;
+        }
+        const body = await res.text();
+        console.error(`[brevo] ✖ API key rejected (${res.status}): ${body}`);
+        console.error("[brevo]   Emails WILL NOT be sent. Create a new key in Brevo → Settings → SMTP & API → API keys, then update BREVO_API_KEY.");
+        await recordEmailStatus(false, `Brevo rejected the API key (${res.status})`);
+    } catch (err) {
+        console.error(`[brevo] Could not reach Brevo to verify the API key: ${err.message}`);
+    }
+}
+await verifyBrevoKey();
 
 // ── Brevo HTTP Send Function ──────────────────────────────────────────────────
 // Uses Brevo's REST API over HTTPS — no SMTP ports needed, works on Render
@@ -43,15 +81,24 @@ async function sendMail({ to, subject, html, text }, maxAttempts = 3) {
             });
 
             if (!response.ok) {
-                const err = await response.text();
-                throw new Error(`Brevo ${response.status}: ${err}`);
+                const body = await response.text();
+                const message = `Brevo ${response.status}: ${body}`;
+                if (isPermanentStatus(response.status)) {
+                    if (response.status === 401 || response.status === 403) {
+                        await recordEmailStatus(false, `Brevo rejected the API key (${response.status})`);
+                    }
+                    throw new PermanentEmailError(message);
+                }
+                throw new Error(message);
             }
 
             const result = await response.json();
             console.log(`[brevo] Delivered: ${result.messageId}`);
+            await recordEmailStatus(true);
             return result;
         } catch (err) {
             console.error(`[brevo] Attempt ${attempt}/${maxAttempts} failed: ${err.message}`);
+            if (err instanceof PermanentEmailError) throw err;
             if (attempt < maxAttempts) {
                 const delay = 1000 * attempt;
                 console.log(`[brevo] Retrying in ${delay / 1000}s…`);
@@ -350,7 +397,13 @@ const processEmailJob = async (job) => {
     if (!template) throw new Error(`Unknown email job: ${name}`);
 
     const { subject, html, text } = template(data);
-    await sendMail({ to: data.to, subject, html, text });
+    try {
+        await sendMail({ to: data.to, subject, html, text });
+    } catch (err) {
+        // Stop Bull's own retries too: the job would fail the same way every time.
+        if (err instanceof PermanentEmailError) await job.discard();
+        throw err;
+    }
     console.log(`[email] Sent [${name}] → ${data.to}`);
 };
 

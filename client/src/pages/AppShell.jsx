@@ -19,7 +19,7 @@ function getInitials(name = "") {
 }
 
 function getAvatarColor(name = "") {
-	const colors = ["#7c72ff", "#3dd68c", "#60a5fa", "#ff6b6b", "#f0c040", "#a78bfa", "#ff8c42"];
+	const colors = ["#3b82f6", "#3dd68c", "#60a5fa", "#ff6b6b", "#f0c040", "#2dd4bf", "#ff8c42"];
 	let hash = 0;
 	for (const ch of name) hash = ch.charCodeAt(0) + ((hash << 5) - hash);
 	return colors[Math.abs(hash) % colors.length];
@@ -56,8 +56,8 @@ const STATUS_OPTIONS = [
 	{ id: "busy", label: "Busy", icon: "alert", color: "var(--red)" },
 	{ id: "meeting", label: "In a meeting", icon: "users", color: "var(--yellow)" },
 	{ id: "focus", label: "Focusing — do not disturb", icon: "lock", color: "var(--blue)" },
-	{ id: "vacation", label: "On vacation", icon: "home", color: "var(--purple)" },
-	{ id: "wfh", label: "Working from home", icon: "home", color: "var(--accent)" },
+	{ id: "vacation", label: "On vacation", icon: "home", color: "var(--teal)" },
+	{ id: "wfh", label: "Working from home", icon: "home", color: "var(--accent-light)" },
 ];
 
 const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
@@ -647,7 +647,7 @@ export default function AppShell() {
 											<Icon
 												name="check"
 												size={14}
-												style={{ color: "var(--accent)" }}
+												style={{ color: "var(--accent-light)" }}
 											/>
 										)}
 									</button>
@@ -1014,7 +1014,7 @@ export default function AppShell() {
 											<Icon
 												name="check"
 												size={12}
-												style={{ color: "var(--accent)" }}
+												style={{ color: "var(--accent-light)" }}
 											/>
 										)}
 									</button>

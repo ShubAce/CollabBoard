@@ -294,7 +294,7 @@ function Hero() {
 				<div
 					aria-hidden
 					className="pointer-events-none absolute inset-x-[10%] -bottom-10 top-1/3 rounded-full"
-					style={{ background: "radial-gradient(ellipse at center, rgba(124,114,255,0.35), transparent 70%)" }}
+					style={{ background: "radial-gradient(ellipse at center, rgba(59, 130, 246,0.35), transparent 70%)" }}
 				/>
 				<motion.div
 					initial={{ opacity: 0, y: 60 }}

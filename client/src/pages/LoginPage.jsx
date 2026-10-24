@@ -7,13 +7,18 @@ import Icon from "../components/ui/Icon.jsx";
 import { fadeUp, staggerContainer } from "../lib/motion";
 import useAuthStore from "../store/authStore";
 
+const OAUTH_ERRORS = {
+	oauth_failed: "Google sign-in didn't complete. Please try again.",
+	oauth_missing_token: "Google sign-in didn't return a session. Please try again.",
+};
+
 export default function LoginPage() {
 	const navigate = useNavigate();
 	const [searchParams] = useSearchParams();
 	const setAuth = useAuthStore((s) => s.setAuth);
 	const [form, setForm] = useState({ email: "", password: "" });
 	const [showPw, setShowPw] = useState(false);
-	const [error, setError] = useState("");
+	const [error, setError] = useState(() => OAUTH_ERRORS[searchParams.get("error")] || "");
 	const [fieldErrors, setFieldErrors] = useState({});
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [failures, setFailures] = useState(0);
@@ -97,20 +102,12 @@ export default function LoginPage() {
 					</motion.div>
 
 					<motion.div variants={fadeUp}>
-						<div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-							<label
-								className="auth-label"
-								htmlFor="login-password"
-							>
-								Password
-							</label>
-							<button
-								type="button"
-								style={{ background: "none", border: "none", fontSize: 12, color: "var(--accent)", cursor: "pointer" }}
-							>
-								Forgot?
-							</button>
-						</div>
+						<label
+							className="auth-label"
+							htmlFor="login-password"
+						>
+							Password
+						</label>
 						<div style={{ position: "relative" }}>
 							<input
 								id="login-password"

@@ -171,7 +171,7 @@ function NotifRow({ notif, onRead, onDelete, isTouch }) {
 								animate={{ opacity: 1, scale: 1 }}
 								exit={INDICATOR_EXIT}
 								transition={SPRING}
-								style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)", flexShrink: 0, boxShadow: "0 0 8px rgba(124, 114, 255, 0.6)" }}
+								style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)", flexShrink: 0, boxShadow: "0 0 8px rgba(59, 130, 246, 0.6)" }}
 							/>
 						)}
 					</AnimatePresence>
@@ -426,7 +426,7 @@ export default function NotificationsPage() {
 									variants={fadeUp}
 									exit={ROW_EXIT}
 									transition={{ layout: SPRING_SOFT }}
-									style={item.kind === "header" ? GROUP_HEADER_STYLE : { background: item.notif.isRead ? "transparent" : "rgba(124, 114, 255, 0.05)", transition: "background-color 0.3s var(--ease-out)" }}
+									style={item.kind === "header" ? GROUP_HEADER_STYLE : { background: item.notif.isRead ? "transparent" : "rgba(59, 130, 246, 0.05)", transition: "background-color 0.3s var(--ease-out)" }}
 								>
 									{item.kind === "header"
 										? item.label

@@ -9,7 +9,7 @@ import Icon from "../components/ui/Icon.jsx";
 import { EASE_OUT, fadeUp, staggerContainer } from "../lib/motion";
 import useAuthStore from "../store/authStore";
 
-const WS_COLORS = ["#7c72ff", "#60a5fa", "#3dd68c", "#ff6b6b", "#f0c040", "#a78bfa", "#ff8c42", "#f472b6"];
+const WS_COLORS = ["#3b82f6", "#60a5fa", "#3dd68c", "#ff6b6b", "#f0c040", "#2dd4bf", "#ff8c42", "#f472b6"];
 const DAY_MS = 1000 * 60 * 60 * 24;
 
 function getInitials(name = "") {
@@ -553,7 +553,7 @@ export default function WorkspaceDashboard() {
 					action={
 						<Link
 							to="/app/my-work"
-							style={{ fontSize: 12, color: "var(--accent)" }}
+							style={{ fontSize: 12, color: "var(--accent-light)" }}
 						>
 							View all my tasks
 						</Link>
@@ -681,7 +681,7 @@ export default function WorkspaceDashboard() {
 					action={
 						<Link
 							to={`/app/workspaces/${workspaceId}/activity`}
-							style={{ fontSize: 12, color: "var(--accent)" }}
+							style={{ fontSize: 12, color: "var(--accent-light)" }}
 						>
 							View all activity
 						</Link>
@@ -753,7 +753,7 @@ export default function WorkspaceDashboard() {
 				<div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
 					<Link
 						to={`/app/workspaces/${workspaceId}/settings`}
-						style={{ fontSize: 12, color: "var(--accent)" }}
+						style={{ fontSize: 12, color: "var(--accent-light)" }}
 					>
 						Manage members
 						</Link>

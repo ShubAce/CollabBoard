@@ -16,9 +16,14 @@ api.interceptors.request.use((config) => {
 	return config;
 });
 
+// A 401 from these means "wrong credentials", not "expired session" — never refresh-and-retry them,
+// or the user sees "Refresh token required" instead of the real error.
+const AUTH_ENDPOINTS = ["/auth/login", "/auth/register", "/auth/refresh"];
+
 // Auto-refresh on 401
 api.interceptors.response.use(null, async (error) => {
-	if (error.response?.status === 401 && error.config && !error.config._retry) {
+	const isAuthCall = AUTH_ENDPOINTS.some((path) => error.config?.url?.includes(path));
+	if (error.response?.status === 401 && error.config && !error.config._retry && !isAuthCall) {
 		error.config._retry = true;
 		try {
 			const { data } = await refreshClient.post("/auth/refresh");

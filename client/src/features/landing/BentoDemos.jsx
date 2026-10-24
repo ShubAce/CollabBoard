@@ -62,8 +62,8 @@ export function CommandDemo() {
 }
 
 const NOTES = [
-	{ icon: "user", color: "var(--accent)", text: "Priya assigned you", sub: "Realtime cursor presence" },
-	{ icon: "chat", color: "var(--purple)", text: "Rahul mentioned you", sub: "#dev-updates" },
+	{ icon: "user", color: "var(--accent-light)", text: "Priya assigned you", sub: "Realtime cursor presence" },
+	{ icon: "chat", color: "var(--teal)", text: "Rahul mentioned you", sub: "#dev-updates" },
 	{ icon: "clock", color: "var(--orange)", text: "Due tomorrow", sub: "Kanban drag performance" },
 ];
 
@@ -136,7 +136,7 @@ export function NotifyDemo() {
 }
 
 const ORBIT = [
-	["AK", "#7c72ff"],
+	["AK", "#3b82f6"],
 	["PS", "#3dd68c"],
 	["RV", "#ff8c42"],
 	["SL", "#60a5fa"],
@@ -153,7 +153,7 @@ export function PresenceDemo() {
 		>
 			<div style={{ position: "absolute", inset: "30px 50px", borderRadius: "50%", border: "1px dashed var(--border-strong)" }} />
 			<span
-				style={{ position: "absolute", left: "50%", top: "50%", width: 46, height: 46, marginLeft: -23, marginTop: -23, borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--accent)", boxShadow: "0 0 40px rgba(124,114,255,0.7)" }}
+				style={{ position: "absolute", left: "50%", top: "50%", width: 46, height: 46, marginLeft: -23, marginTop: -23, borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--accent)", boxShadow: "0 0 40px rgba(59, 130, 246,0.7)" }}
 			>
 				<img
 					src="/logo.png"
@@ -173,7 +173,7 @@ export function PresenceDemo() {
 					return (
 						<motion.span
 							key={initials}
-							style={{ position: "absolute", left: x, top: y, width: 30, height: 30, borderRadius: "50%", background: color, color: "#0d0f17", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 0 3px var(--bg-base)" }}
+							style={{ position: "absolute", left: x, top: y, width: 30, height: 30, borderRadius: "50%", background: color, color: "#09090b", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 0 3px var(--bg-base)" }}
 							animate={inView ? { rotate: -360 } : {}}
 							transition={{ duration: 28, ease: "linear", repeat: Infinity }}
 						>
@@ -202,7 +202,7 @@ export function InviteDemo() {
 			style={{ width: "84%", maxWidth: 300, display: "flex", flexDirection: "column", gap: 10 }}
 		>
 			<div style={{ display: "flex", gap: 8 }}>
-				<div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 8, height: 36, padding: "0 10px", borderRadius: 8, border: `1px solid ${state === "idle" ? "var(--border-focus)" : "var(--border-default)"}`, background: "var(--bg-surface-2)", fontSize: 12, boxShadow: state === "idle" ? "0 0 0 3px rgba(124,114,255,0.18)" : "none", transition: "all 200ms" }}>
+				<div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 8, height: 36, padding: "0 10px", borderRadius: 8, border: `1px solid ${state === "idle" ? "var(--border-focus)" : "var(--border-default)"}`, background: "var(--bg-surface-2)", fontSize: 12, boxShadow: state === "idle" ? "0 0 0 3px rgba(59, 130, 246,0.18)" : "none", transition: "all 200ms" }}>
 					<Icon
 						name="mail"
 						size={12}

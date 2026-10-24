@@ -10,6 +10,12 @@ router.post("/login", auth.login);
 router.post("/logout", authenticateToken, auth.logout);
 router.post("/refresh", auth.refresh);
 router.get("/google", passport.authenticate("google", { scope: ["profile", "email"] }));
-router.get("/google/callback", passport.authenticate("google", { session: false }), auth.googleCallback);
+// On a failed/cancelled Google handshake, send the user back to the login page
+// (which explains the error) instead of a bare 401.
+router.get(
+	"/google/callback",
+	passport.authenticate("google", { session: false, failureRedirect: `${process.env.CLIENT_URL}/login?error=oauth_failed` }),
+	auth.googleCallback,
+);
 
 export default router;

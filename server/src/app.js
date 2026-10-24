@@ -18,7 +18,7 @@ import "./config/passport.js";
 import { authenticateToken } from "./middleware/auth.js";
 import { checkWorkspaceMember } from "./middleware/checkRole.js";
 import { errorHandler } from "./middleware/errorHandler.js";
-import { apiLimiter, authLimiter } from "./middleware/rateLimiter.js";
+import { apiLimiter, authLimiter, registerLimiter } from "./middleware/rateLimiter.js";
 import emailQueue from "./queues/emailQueue.js";
 import activityQueue from "./queues/activityQueue.js";
 
@@ -47,7 +47,7 @@ if (process.env.NODE_ENV !== "production") {
 // ─── Rate limiting ─────────────────────────────────────────────────────────────
 app.use("/api/v1", apiLimiter);
 app.use("/api/v1/auth/login", authLimiter);
-app.use("/api/v1/auth/register", authLimiter);
+app.use("/api/v1/auth/register", registerLimiter);
 
 // ─── Routes ────────────────────────────────────────────────────────────────────
 app.use("/api/v1/auth", authRoutes);

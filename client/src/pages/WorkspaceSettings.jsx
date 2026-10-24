@@ -16,7 +16,7 @@ const TAB_META = {
 	channels: { label: "Channels", icon: "hash" },
 	danger: { label: "Danger Zone", icon: "alert" },
 };
-const WS_COLORS = ["#6C63FF", "#60A5FA", "#34D399", "#F87171", "#FBBF24", "#A78BFA", "#FB923C", "#F472B6"];
+const WS_COLORS = ["#3b82f6", "#60A5FA", "#34D399", "#F87171", "#FBBF24", "#2dd4bf", "#FB923C", "#F472B6"];
 
 // Panel leaves quickly; its children stagger back in with fadeUp.
 const panelExit = { opacity: 0, y: -4, transition: { duration: 0.15, ease: EASE_IN } };
@@ -140,7 +140,7 @@ function SettingsCard({ title, subtitle, icon, action, children, danger = false 
 function RoleBadge({ role }) {
 	const style = {
 		owner: { background: "var(--warning-muted)", color: "var(--warning)" },
-		admin: { background: "var(--accent-muted)", color: "var(--accent)" },
+		admin: { background: "var(--accent-muted)", color: "var(--accent-light)" },
 		editor: { background: "var(--bg-surface-2)", color: "var(--text-primary)" },
 		viewer: { background: "var(--bg-surface-2)", color: "var(--text-secondary)" },
 	}[role] || { background: "var(--bg-surface-2)", color: "var(--text-secondary)" };
@@ -436,7 +436,7 @@ export default function WorkspaceSettings() {
 		count: tab === "members" ? members.length : undefined,
 	}));
 	const previewName = generalForm.name || workspace?.name || "";
-	const workspaceColor = workspace?.color || "#7c72ff";
+	const workspaceColor = workspace?.color || "#3b82f6";
 
 	return (
 		<motion.section
@@ -668,7 +668,7 @@ export default function WorkspaceSettings() {
 																					<span style={{ display: "block", fontSize: 12, ...ellipsis }}>{result.email}</span>
 																				</span>
 																			</span>
-																			<span style={{ color: "var(--accent)", fontWeight: 600, flexShrink: 0 }}>Invite</span>
+																			<span style={{ color: "var(--accent-light)", fontWeight: 600, flexShrink: 0 }}>Invite</span>
 																		</button>
 																	))}
 																{!isSearching && !results.length && emailFallbackVisible && (

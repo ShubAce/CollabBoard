@@ -18,7 +18,8 @@ export const getSocket = (tokenOverride) => {
 	}
 
 	socketToken = token;
-	socket = io(import.meta.env.VITE_SOCKET_URL, {
+	// Empty VITE_SOCKET_URL (dev) = same origin, which the Vite proxy forwards to the server.
+	socket = io(import.meta.env.VITE_SOCKET_URL || undefined, {
 		auth: { token },
 		transports: ["websocket"],
 	});

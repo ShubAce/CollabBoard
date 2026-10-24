@@ -2,12 +2,12 @@ import "dotenv/config";
 import dns from "node:dns";
 dns.setDefaultResultOrder("ipv4first");
 
-import mongoose from "mongoose";
+import { connectDB } from "../../config/db.js";
 import activityQueue from "../activityQueue.js";
 import ActivityLog from "../../models/ActivityLog.js";
 
 // Workers run as standalone processes — need their own DB connection
-await mongoose.connect(process.env.MONGO_URI);
+await connectDB();
 
 const actionMap = {
 	log_task_created: { action: "task.created", entityType: "task" },

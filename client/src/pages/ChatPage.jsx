@@ -14,7 +14,7 @@ import { getSocket } from "../socket";
 import useAuthStore from "../store/authStore";
 
 /* ── helpers ─────────────────────────────────────────────────── */
-const WS_COLORS = ["#6C63FF", "#60A5FA", "#34D399", "#F87171", "#FBBF24", "#A78BFA", "#FB923C", "#F472B6"];
+const WS_COLORS = ["#3b82f6", "#60A5FA", "#34D399", "#F87171", "#FBBF24", "#2dd4bf", "#FB923C", "#F472B6"];
 
 function getInitials(name = "") {
 	return name

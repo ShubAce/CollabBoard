@@ -6,7 +6,7 @@ import api from "../api/axios";
 import Icon from "../components/ui/Icon.jsx";
 import { fadeUp, staggerContainer } from "../lib/motion";
 
-const AVATAR_COLORS = ["#7c72ff", "#60a5fa", "#3dd68c", "#ff6b6b", "#f0c040", "#a78bfa", "#ff8c42", "#f472b6"];
+const AVATAR_COLORS = ["#3b82f6", "#60a5fa", "#3dd68c", "#ff6b6b", "#f0c040", "#2dd4bf", "#ff8c42", "#f472b6"];
 
 const GROUP_HEADER_STYLE = {
 	padding: "10px 16px 6px",

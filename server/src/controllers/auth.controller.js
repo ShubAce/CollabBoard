@@ -34,10 +34,15 @@ const clearRefreshCookie = (res) => {
 
 const getRefreshToken = (req) => req.cookies?.refreshToken || req.body?.refreshToken;
 
+// Surface the first concrete problem ("Password must be at least 8 characters")
+// instead of a generic "Validation error" the UI can't act on.
+const validationResponse = (res, error) =>
+	res.status(400).json({ message: error.issues[0]?.message || "Validation error", errors: error.flatten() });
+
 export const register = async (req, res) => {
 	const parsed = registerSchema.safeParse(req.body);
 	if (!parsed.success) {
-		return res.status(400).json({ message: "Validation error", errors: parsed.error.flatten() });
+		return validationResponse(res, parsed.error);
 	}
 
 	const { name, email, password } = parsed.data;
@@ -45,25 +50,30 @@ export const register = async (req, res) => {
 
 	const existing = await User.findOne({ email: normalizedEmail });
 	if (existing) {
-		return res.status(409).json({ message: "Email already registered" });
+		return res.status(409).json({ message: "An account with this email already exists. Try logging in." });
 	}
 
 	const passwordHash = await bcrypt.hash(password, 12);
 
-	await User.create({
+	const user = await User.create({
 		name,
 		email: normalizedEmail,
 		passwordHash,
 		isVerified: false,
 	});
 
-	return res.status(201).json({ message: "Registration successful. Please verify your email." });
+	// No email-verification flow exists (and login never required it), so sign the
+	// new user straight in instead of stranding them on a "check your email" screen.
+	const { accessToken, refreshToken } = await generateTokens(user);
+	setRefreshCookie(res, refreshToken);
+
+	return res.status(201).json({ accessToken, user });
 };
 
 export const login = async (req, res) => {
 	const parsed = loginSchema.safeParse(req.body);
 	if (!parsed.success) {
-		return res.status(400).json({ message: "Validation error", errors: parsed.error.flatten() });
+		return validationResponse(res, parsed.error);
 	}
 
 	const { email, password } = parsed.data;
@@ -71,12 +81,12 @@ export const login = async (req, res) => {
 
 	const user = await User.findOne({ email: normalizedEmail });
 	if (!user || !user.passwordHash) {
-		return res.status(401).json({ message: "Invalid credentials" });
+		return res.status(401).json({ message: "Incorrect email or password." });
 	}
 
 	const matches = await bcrypt.compare(password, user.passwordHash);
 	if (!matches) {
-		return res.status(401).json({ message: "Invalid credentials" });
+		return res.status(401).json({ message: "Incorrect email or password." });
 	}
 
 	const { accessToken, refreshToken } = await generateTokens(user);

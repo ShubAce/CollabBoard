@@ -1,12 +1,11 @@
 import "dotenv/config";
-import mongoose from "mongoose";
+import { connectDB } from "../../config/db.js";
 import cron from "node-cron";
 import emailQueue from "../emailQueue.js";
 import Task from "../../models/Task.js";
 
 // ── DB Connection ─────────────────────────────────────────────────────────────
-await mongoose.connect(process.env.MONGO_URI);
-console.log("MongoDB connected.");
+await connectDB();
 
 if (!process.env.BREVO_API_KEY) {
     console.error("FATAL: BREVO_API_KEY is not set.");

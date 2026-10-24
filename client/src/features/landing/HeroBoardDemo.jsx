@@ -20,12 +20,12 @@ const CARD_GAP = 10;
 const PEOPLE = {
 	priya: { name: "Priya", initials: "PS", color: "#3dd68c" },
 	rahul: { name: "Rahul", initials: "RV", color: "#ff8c42" },
-	arjun: { name: "Arjun", initials: "AK", color: "#7c72ff" },
+	arjun: { name: "Arjun", initials: "AK", color: "#3b82f6" },
 	sara: { name: "Sara", initials: "SL", color: "#60a5fa" },
 };
 
 const CARDS = {
-	a: { title: "Design onboarding checklist", tag: ["Design", "#a78bfa"], priority: "var(--p-high)", people: ["priya"], meta: "Due Thu" },
+	a: { title: "Design onboarding checklist", tag: ["Design", "#2dd4bf"], priority: "var(--p-high)", people: ["priya"], meta: "Due Thu" },
 	b: { title: "Write webhook API docs", tag: ["Docs", "#60a5fa"], priority: "var(--p-medium)", people: ["rahul"], meta: "Due Fri" },
 	c: { title: "Realtime cursor presence", tag: ["Feature", "#3dd68c"], priority: "var(--p-urgent)", people: ["arjun", "priya"], progress: 0.6 },
 	d: { title: "Kanban drag performance", tag: ["Perf", "#f0c040"], priority: "var(--p-high)", people: ["sara"], meta: "2 / 3" },
@@ -60,7 +60,7 @@ function positionsFor(board) {
 	return positions;
 }
 
-function Face({ id, size = 20, ring = "#161925" }) {
+function Face({ id, size = 20, ring = "#121215" }) {
 	const person = PEOPLE[id];
 	return (
 		<span
@@ -69,7 +69,7 @@ function Face({ id, size = 20, ring = "#161925" }) {
 				height: size,
 				borderRadius: "50%",
 				background: person.color,
-				color: "#0d0f17",
+				color: "#09090b",
 				fontSize: size * 0.42,
 				fontWeight: 700,
 				display: "inline-flex",
@@ -147,7 +147,7 @@ function Cursor({ person, x, y, transition }) {
 			</svg>
 			<span
 				className="lp-cursor-name"
-				style={{ background: person.color, color: "#0d0f17" }}
+				style={{ background: person.color, color: "#09090b" }}
 			>
 				{person.name}
 			</span>
@@ -219,7 +219,7 @@ export default function HeroBoardDemo() {
 				style={{ width: DESIGN_W, height: DESIGN_H, transform: `scale(${scale})`, transformOrigin: "top left", position: "absolute", top: 0, left: 0 }}
 			>
 				{/* Window chrome */}
-				<div style={{ height: 40, display: "flex", alignItems: "center", gap: 8, padding: "0 16px", borderBottom: "1px solid rgba(255,255,255,0.06)", background: "#0d0f19" }}>
+				<div style={{ height: 40, display: "flex", alignItems: "center", gap: 8, padding: "0 16px", borderBottom: "1px solid rgba(255,255,255,0.06)", background: "#0c0c0e" }}>
 					<span style={{ width: 11, height: 11, borderRadius: "50%", background: "#ff5f56" }} />
 					<span style={{ width: 11, height: 11, borderRadius: "50%", background: "#ffbd2e" }} />
 					<span style={{ width: 11, height: 11, borderRadius: "50%", background: "#27c93f" }} />
@@ -236,7 +236,7 @@ export default function HeroBoardDemo() {
 				{/* Sidebar */}
 				<div style={{ position: "absolute", top: 40, bottom: 0, left: 0, width: SIDEBAR_W, background: "var(--bg-sidebar)", borderRight: "1px solid var(--border-subtle)", padding: "14px 10px", display: "flex", flexDirection: "column", gap: 4 }}>
 					<div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 8px 14px", fontSize: 13, fontWeight: 600 }}>
-						<span style={{ width: 14, height: 14, borderRadius: 4, background: "var(--accent)", boxShadow: "0 0 10px rgba(124,114,255,0.6)" }} />
+						<span style={{ width: 14, height: 14, borderRadius: 4, background: "var(--accent)", boxShadow: "0 0 10px rgba(59, 130, 246,0.6)" }} />
 						Team Alpha
 					</div>
 					{[
@@ -305,7 +305,7 @@ export default function HeroBoardDemo() {
 									<Face
 										id={p}
 										size={24}
-										ring="#0b0d16"
+										ring="#0a0a0c"
 									/>
 								</span>
 							))}

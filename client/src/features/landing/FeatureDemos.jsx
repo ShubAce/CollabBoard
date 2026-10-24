@@ -27,11 +27,11 @@ function ScaledStage({ width, height, children, className = "", style }) {
 const KANBAN_CARDS = {
 	copy: { title: "Update homepage copy", tags: [["Urgent", "#ff6b6b"], ["Design", "#60a5fa"]], people: ["#60a5fa"], meta: "paperclip" },
 	auth: { title: "Implement OAuth login", tags: [["Feature", "#3dd68c"]], people: ["#f472b6", "#f0c040"], meta: "chat", count: 3 },
-	nav: { title: "Fix mobile nav overflow", tags: [["Bug", "#ff8c42"]], people: ["#a78bfa"], meta: "clock" },
+	nav: { title: "Fix mobile nav overflow", tags: [["Bug", "#ff8c42"]], people: ["#2dd4bf"], meta: "clock" },
 };
 
-const RESTING_SHADOW = "0 6px 18px rgba(0,0,0,0.3), 0 0 0 0px rgba(124,114,255,0)";
-const LIFTED_SHADOW = "0 16px 50px rgba(0,0,0,0.6), 0 0 0 1px rgba(124,114,255,0.6)";
+const RESTING_SHADOW = "0 6px 18px rgba(0,0,0,0.3), 0 0 0 0px rgba(59, 130, 246,0)";
+const LIFTED_SHADOW = "0 16px 50px rgba(0,0,0,0.6), 0 0 0 1px rgba(59, 130, 246,0.6)";
 
 // The travelling card remounts in its new column (shared layoutId), so its
 // mount animation doubles as the "picked up → dropped" moment (UI.md §18.1).
@@ -181,7 +181,7 @@ export function WhiteboardDemo() {
 		<div
 			ref={ref}
 			className="lp-panel"
-			style={{ background: "radial-gradient(circle at 50% 40%, #151827 0%, #0a0c13 100%)" }}
+			style={{ background: "radial-gradient(circle at 50% 40%, #141418 0%, #08080a 100%)" }}
 		>
 			<ScaledStage
 				width={WB_W}
@@ -228,13 +228,13 @@ export function WhiteboardDemo() {
 
 				<motion.div
 					{...pop(0.2)}
-					style={{ position: "absolute", left: 66, top: 86, padding: "11px 18px", borderRadius: 10, background: "#1d2130", border: "2px solid var(--blue)", fontSize: 14, fontWeight: 600, boxShadow: "0 10px 24px rgba(0,0,0,0.35)" }}
+					style={{ position: "absolute", left: 66, top: 86, padding: "11px 18px", borderRadius: 10, background: "#18181c", border: "2px solid var(--blue)", fontSize: 14, fontWeight: 600, boxShadow: "0 10px 24px rgba(0,0,0,0.35)" }}
 				>
 					User Login
 				</motion.div>
 				<motion.div
 					{...pop(0.45)}
-					style={{ position: "absolute", left: 252, top: 192, padding: "11px 18px", borderRadius: 10, background: "#1d2130", border: "2px solid var(--green)", fontSize: 14, fontWeight: 600, boxShadow: "0 10px 24px rgba(0,0,0,0.35)" }}
+					style={{ position: "absolute", left: 252, top: 192, padding: "11px 18px", borderRadius: 10, background: "#18181c", border: "2px solid var(--green)", fontSize: 14, fontWeight: 600, boxShadow: "0 10px 24px rgba(0,0,0,0.35)" }}
 				>
 					Dashboard
 				</motion.div>
@@ -263,7 +263,7 @@ export function WhiteboardDemo() {
 					{["#f472b6", "#3dd68c", "#60a5fa"].map((color) => (
 						<span
 							key={color}
-							style={{ width: 14, height: 14, margin: "2px auto", borderRadius: "50%", background: color, boxShadow: color === "#f472b6" ? "0 0 0 2px #0a0c13, 0 0 0 3px #f472b6" : "none" }}
+							style={{ width: 14, height: 14, margin: "2px auto", borderRadius: "50%", background: color, boxShadow: color === "#f472b6" ? "0 0 0 2px #08080a, 0 0 0 3px #f472b6" : "none" }}
 						/>
 					))}
 				</div>
@@ -292,7 +292,7 @@ export function WhiteboardDemo() {
 const CHAT = [
 	{ id: "m1", who: "Alex", initials: "AL", gradient: "linear-gradient(135deg, #60a5fa, #2dd4bf)", text: "The new staging environment is up! 🚀 Everyone please test the kanban drag-and-drop.", time: "10:42 AM" },
 	{ id: "m2", who: "Priya", initials: "PS", gradient: "linear-gradient(135deg, #3dd68c, #a3e635)", text: "On it — the column reorder feels instant now.", time: "10:44 AM" },
-	{ id: "m3", who: "You", initials: "YOU", gradient: "linear-gradient(135deg, #7c72ff, #a78bfa)", text: "Awesome, jumping in to review the PRs now. Looks super smooth so far.", time: "10:45 AM", own: true },
+	{ id: "m3", who: "You", initials: "YOU", gradient: "linear-gradient(135deg, #3b82f6, #2dd4bf)", text: "Awesome, jumping in to review the PRs now. Looks super smooth so far.", time: "10:45 AM", own: true },
 ];
 // Script: which messages are visible, whether someone is typing, whether the reaction landed.
 const CHAT_SCRIPT = [

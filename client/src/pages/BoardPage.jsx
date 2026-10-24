@@ -29,7 +29,7 @@ const PRIORITY_META = {
 	low: { label: "Low", color: "var(--priority-low)", bg: "var(--green-muted)" },
 };
 
-const AVATAR_COLORS = ["#7c72ff", "#3dd68c", "#60a5fa", "#ff6b6b", "#f0c040", "#a78bfa", "#ff8c42"];
+const AVATAR_COLORS = ["#3b82f6", "#3dd68c", "#60a5fa", "#ff6b6b", "#f0c040", "#2dd4bf", "#ff8c42"];
 
 function getInitials(name = "") {
 	return name
@@ -673,7 +673,7 @@ function TaskPanel({ task, column, onClose, onSubTaskAdd, onSubTaskToggle, onSub
 							<div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 12 }}>
 								{comments.map((c) => {
 									const avatarBg = c.author?.name
-										? ["#7c72ff","#3dd68c","#60a5fa","#ff6b6b","#f0c040"][
+										? ["#3b82f6","#3dd68c","#60a5fa","#ff6b6b","#f0c040"][
 												[...c.author.name].reduce((h, ch) => ch.charCodeAt(0) + ((h << 5) - h), 0) % 5
 											]
 										: "var(--bg-surface-3)";
@@ -1576,7 +1576,7 @@ export default function BoardPage() {
 								}, []).map((user, i) => (
 									<div key={user._id} style={{ display: "flex", alignItems: "center", padding: "12px 0", borderBottom: "1px solid var(--border-subtle)" }}>
 										<div style={{ width: 220, flexShrink: 0, display: "flex", alignItems: "center", gap: 10 }}>
-											<div className="avatar avatar-xs" style={{ background: "var(--accent-muted)", color: "var(--accent)" }}>{user.name?.[0] || "?"}</div>
+											<div className="avatar avatar-xs" style={{ background: "var(--accent-muted)", color: "var(--accent-light)" }}>{user.name?.[0] || "?"}</div>
 											<span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>{user.name}</span>
 										</div>
 										<div style={{ flex: 1, position: "relative", height: 32, background: "var(--bg-surface-2)", borderRadius: "var(--r-sm)" }}>

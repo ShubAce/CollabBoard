@@ -8,7 +8,7 @@ import Icon from "../components/ui/Icon.jsx";
 import { EASE_OUT, fadeUp, staggerContainer } from "../lib/motion";
 import useAuthStore from "../store/authStore";
 
-const WS_COLORS = ["#7c72ff", "#60a5fa", "#3dd68c", "#ff6b6b", "#f0c040", "#a78bfa", "#ff8c42", "#f472b6"];
+const WS_COLORS = ["#3b82f6", "#60a5fa", "#3dd68c", "#ff6b6b", "#f0c040", "#2dd4bf", "#ff8c42", "#f472b6"];
 const strengthLabel = ["", "Weak", "Fair", "Good", "Strong"];
 const strengthColor = ["", "var(--danger)", "var(--warning)", "#60A5FA", "var(--success)"];
 
@@ -65,7 +65,7 @@ function HeroIcon({ name, danger = false }) {
 				borderRadius: 16,
 				...(danger
 					? { background: "var(--danger-muted)", borderColor: "rgba(255,107,107,0.35)", color: "var(--danger)", boxShadow: "0 0 40px rgba(255,107,107,0.3)" }
-					: { boxShadow: "0 0 40px rgba(124,114,255,0.45)" }),
+					: { boxShadow: "0 0 40px rgba(59, 130, 246,0.45)" }),
 			}}
 		>
 			<svg

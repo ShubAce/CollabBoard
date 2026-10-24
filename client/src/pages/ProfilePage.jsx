@@ -8,7 +8,7 @@ import SegmentedTabs from "../components/ui/SegmentedTabs.jsx";
 import { EASE_IN, EASE_OUT, fadeUp, SPRING, staggerContainer } from "../lib/motion";
 import useAuthStore from "../store/authStore";
 
-const WS_COLORS = ["#6C63FF", "#60A5FA", "#34D399", "#F87171", "#FBBF24", "#A78BFA", "#FB923C", "#F472B6"];
+const WS_COLORS = ["#3b82f6", "#60A5FA", "#34D399", "#F87171", "#FBBF24", "#2dd4bf", "#FB923C", "#F472B6"];
 function getInitials(name = "") { return name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2); }
 function getColor(name = "") {
 	let h = 0;
@@ -31,9 +31,9 @@ const TAB_ITEMS = [
 	{ value: "preferences", label: "Preferences", icon: "settings" },
 ];
 const THEME_OPTIONS = [
-	{ value: "dark", label: "Dark", preview: "linear-gradient(135deg, #0f1117 0%, #1c1f2e 100%)", ink: "rgba(255,255,255,0.16)" },
+	{ value: "dark", label: "Dark", preview: "linear-gradient(135deg, #0b0b0d 0%, #1c1f2e 100%)", ink: "rgba(255,255,255,0.16)" },
 	{ value: "light", label: "Light", preview: "linear-gradient(135deg, #ffffff 0%, #e6e8f2 100%)", ink: "rgba(15,17,23,0.14)" },
-	{ value: "system", label: "System", preview: "linear-gradient(135deg, #0f1117 0 50%, #eef0f6 50% 100%)", ink: "rgba(124,114,255,0.35)" },
+	{ value: "system", label: "System", preview: "linear-gradient(135deg, #0b0b0d 0 50%, #eef0f6 50% 100%)", ink: "rgba(59, 130, 246,0.35)" },
 ];
 
 // Panel leaves quickly; its sections stagger back in with fadeUp.
@@ -131,7 +131,7 @@ function Toggle({ on, onClick, label }) {
 				height: 24,
 				borderRadius: 12,
 				background: on ? "var(--accent)" : "var(--bg-surface-3)",
-				boxShadow: on ? "0 0 14px rgba(124,114,255,0.35)" : "inset 0 0 0 1px var(--border-default)",
+				boxShadow: on ? "0 0 14px rgba(59, 130, 246,0.35)" : "inset 0 0 0 1px var(--border-default)",
 				border: "none",
 				cursor: "pointer",
 				position: "relative",
@@ -538,7 +538,7 @@ export default function ProfilePage() {
 									<div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
 										<span
 											className="icon-box"
-											style={{ width: 36, height: 36, background: isGoogle ? "#fff" : "var(--accent-muted)", borderColor: isGoogle ? "transparent" : "var(--accent-border)", color: "var(--accent)" }}
+											style={{ width: 36, height: 36, background: isGoogle ? "#fff" : "var(--accent-muted)", borderColor: isGoogle ? "transparent" : "var(--accent-border)", color: "var(--accent-light)" }}
 										>
 											{isGoogle ? (
 												<GoogleIcon />
